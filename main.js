@@ -122,6 +122,8 @@ function initGUI() {
         bracos: 1,
         braco_dir: 1,
         braco_esq: 1,
+        antebraco_dir: 1,
+        antebraco_esq: 1,
     };
 
     const gui = new GUI({ title: "Membros" });
@@ -138,6 +140,14 @@ function initGUI() {
 
     gui.add(params, "braco_esq", 0.5, 2, 0.01).onChange(function (value) {
         escalarOssoI(ossos.braco_esq, new THREE.Vector3(1, value, 1));
+    });
+
+    gui.add(params, "antebraco_esq", 0.5, 2, 0.01).onChange(function (value) {
+        escalarOssoI(ossos.antebraco_esq, new THREE.Vector3(1, value, 1));
+    });
+
+    gui.add(params, "antebraco_dir", 0.5, 2, 0.01).onChange(function (value) {
+        escalarOssoI(ossos.antebraco_dir, new THREE.Vector3(1, value, 1));
     });
 }
 
