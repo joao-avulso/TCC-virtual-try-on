@@ -3,23 +3,22 @@ import { GUI } from "three/addons/libs/lil-gui.module.min.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader";
 
-let container, camera, scene, renderer, mesh, model;
+let container, camera, scene, renderer, model, mixer, playAnim, anim;
+
+const fps = 60; // Limite de frames por segundo
+const fpsInterval = 1000 / fps; // Intervalo de tempo entre os frames em milissegundos
 
 const ossos = {};
-// ossos
-// let braco_esq = new THREE.Bone();
-// let antebraco_esq = new THREE.Bone();
-// let braco_dir = new THREE.Bone();
-// let antebraco_dir = new THREE.Bone();
-// let coxa_esq = new THREE.Bone();
-// let perna_esq = new THREE.Bone();
-// let coxa_dir = new THREE.Bone();
-// let perna_dir = new THREE.Bone();
 
 init();
 
 async function init() {
     container = document.getElementById("container");
+    playAnim = false;
+
+    // clock
+
+    const clock = new THREE.Clock();
 
     // cena
 
@@ -36,14 +35,14 @@ async function init() {
 
     // contrução do modelo
 
-    loadAndAccessModel("models/X_Bot.fbx"); // Espera o modelo ser carregado
+    loadAndAccessModel("models/Ch36_nonPBR.fbx", "anims/Idle.fbx"); // Espera o modelo ser carregado
 
     // helpers
 
     const gridHelper = new THREE.GridHelper(1000, 1000);
     scene.add(gridHelper);
 
-    // luzes
+    // iluminação
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 1);
     scene.add(ambientLight);
@@ -70,7 +69,7 @@ async function init() {
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
 
-    // orbit controls
+    // controles de camera
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 1, 0);
@@ -78,81 +77,72 @@ async function init() {
     controls.maxPolarAngle = Math.PI / 2;
     controls.update();
 
-    // render loop
+    // loop de renderização
+
+    let lastFrameTime = Date.now(); // Tempo do último frame
 
     renderer.setAnimationLoop(function () {
+        const now = Date.now();
+        const elapsed = now - lastFrameTime;
+
+        if (elapsed > fpsInterval) {
+            lastFrameTime = now - (elapsed % fpsInterval); // Ajustar o tempo para o tempo restante
+
+            const delta = clock.getDelta(); // Obter o tempo desde o último frame
+
+            if (playAnim == true) { // Verificar se a animação deve ser reproduzida
+                if (mixer && model.mixer) { // Verificar se o mixer existe
+                    model.mixer.update(delta); // Atualizar o mixer
+                }
+            }
+            else {
+                if (mixer && model.mixer) { // Verificar se o mixer existe
+                    model.mixer.stopAllAction(); // Parar todas as animações
+                }
+            }
+        }
+
         renderer.render(scene, camera);
     });
+
     container.appendChild(renderer.domElement);
-}
-
-function createObject() {
-    const geometry = new THREE.BoxGeometry(2, 2, 2, 32, 32, 32);
-
-    // cria um vetor de morph targets
-    geometry.morphAttributes.position = [];
-
-    // posições originais dos vértices do cubo
-    const positionAttribute = geometry.attributes.position;
-
-    // mover os vértices do cubo para as posições dos vértices de uma esfera
-    const spherePositions = [];
-
-    for (let i = 0; i < positionAttribute.count; i++) {
-        const x = positionAttribute.getX(i);
-        const y = positionAttribute.getY(i);
-        const z = positionAttribute.getZ(i);
-
-        spherePositions.push(
-            x * Math.sqrt(1 - (y * y) / 2 - (z * z) / 2 + (y * y * z * z) / 3),
-            y * Math.sqrt(1 - (z * z) / 2 - (x * x) / 2 + (z * z * x * x) / 3),
-            z * Math.sqrt(1 - (x * x) / 2 - (y * y) / 2 + (x * x * y * y) / 3)
-        );
-    }
-
-    // adicionar posições da esfera ao primeiro morph target
-    geometry.morphAttributes.position[0] = new THREE.Float32BufferAttribute(spherePositions, 3);
-
-    return geometry;
 }
 
 // Configurações de GUI
 function initGUI() {
     const params = {
         bracos: 1,
-        braco_dir: 1,
-        braco_esq: 1,
-        antebraco_dir: 1,
-        antebraco_esq: 1,
+        pernas: 1,
+        tronco: 1,
+        cabeca: 1,
+        anim: false,
     };
 
     const gui = new GUI({ title: "Membros" });
 
-    gui.add(params, "bracos", 0.5, 2, 0.01).onChange(function (value) {
-        ossos.braco_esq.scale.set(ossos.braco_dir.scale.x, ossos.braco_dir.scale.y, ossos.braco_dir.scale.z);
-        escalarOsso(ossos.braco_dir, new THREE.Vector3(1, value, 1));
-        escalarOsso(ossos.braco_esq, new THREE.Vector3(1, value, 1));
+    gui.add(params, "bracos", 0.5, 1.5, 0.01).onChange(function (value) {
+        escalarBracos(value);
     });
 
-    gui.add(params, "braco_dir", 0.5, 2, 0.01).onChange(function (value) {
-        escalarOssoI(ossos.braco_dir, new THREE.Vector3(1, value, 1));
+    gui.add(params, "pernas", 0.5, 1.5, 0.01).onChange(function (value) {
+        escalarPernas(value);
     });
 
-    gui.add(params, "braco_esq", 0.5, 2, 0.01).onChange(function (value) {
-        escalarOssoI(ossos.braco_esq, new THREE.Vector3(1, value, 1));
+    gui.add(params, "tronco", 0.5, 1.5, 0.01).onChange(function (value) {
+        escalarTronco(value);
     });
 
-    gui.add(params, "antebraco_esq", 0.5, 2, 0.01).onChange(function (value) {
-        escalarOssoI(ossos.antebraco_esq, new THREE.Vector3(1, value, 1));
+    gui.add(params, "cabeca", 0.9, 1.1, 0.01).onChange(function (value) {
+        escalarCabeca(value);
     });
 
-    gui.add(params, "antebraco_dir", 0.5, 2, 0.01).onChange(function (value) {
-        escalarOssoI(ossos.antebraco_dir, new THREE.Vector3(1, value, 1));
+    gui.add(params, "anim").onChange(function (value) {
+        rodaAnimacao();
     });
 }
 
 // Função para carregar um modelo FBX na cena
-function loadModel(modelURL) {
+function loadModel(modelURL, animationURL) {
     return new Promise((resolve, reject) => {
         const loader = new FBXLoader();
         loader.load(
@@ -167,82 +157,108 @@ function loadModel(modelURL) {
                 });
                 object.name = "model";
                 scene.add(object);
-                resolve(object); // Resolve a promessa com o objeto carregado
+
+                // Carregar animação
+                loader.load(
+                    animationURL,
+                    function (animation) {
+                        mixer = new THREE.AnimationMixer(object);
+                        anim = animation.animations[0];
+                        const action = mixer.clipAction(anim);
+                        action.play();
+
+                        // Armazenar o mixer para atualizar na função de renderização
+                        object.mixer = mixer;
+
+                        resolve(object); // Resolve a promessa com o objeto e a animação carregados
+                    },
+                    undefined,
+                    function (error) {
+                        console.error('Erro ao carregar a animação:', error);
+                        reject(error); // Rejeita a promessa se houver um erro ao carregar a animação
+                    }
+                );
             },
             undefined,
             function (error) {
-                reject(error); // Rejeita a promessa se houver um erro
+                console.error('Erro ao carregar o modelo:', error);
+                reject(error); // Rejeita a promessa se houver um erro ao carregar o modelo
             }
         );
     });
 }
 
 // Função assíncrona para carregar o modelo e então acessá-lo
-async function loadAndAccessModel(modelURL) {
+async function loadAndAccessModel(modelURL, animationURL) {
     try {
-        model = await loadModel(modelURL); // Espera o modelo ser carregado
+        model = await loadModel(modelURL, animationURL); // Espera o modelo ser carregado
         console.log("Modelo carregado:", model);
 
         // Desenhar o esqueleto e acessar skeleton Helper
         const skeletonHelper = new THREE.SkeletonHelper(model);
-        scene.add(skeletonHelper);
+        // scene.add(skeletonHelper);
 
-        // Liste todos os ossos
+        // Definir ossos de interesse
         skeletonHelper.bones.forEach((bone, index) => {
             console.log(`Bone ${index}: ${bone.name}`);
-            switch (index) {
-                case 0:
-                    ossos.quadril = bone;
-                    break;
+            if(!ossos.tronco 
+                && bone.name.includes("Spine") 
+                && !bone.name.includes("Spine1") 
+                && !bone.name.includes("Spine2")) 
+                ossos.tronco = bone;
 
-                case 63:
-                    ossos.braco_esq = bone;
-                    break;
+            if(!ossos.braco_esq && bone.name.includes("LeftArm")) ossos.braco_esq = bone;
 
-                case 65:
-                    ossos.antebraco_esq = bone;
-                    break;
+            if(!ossos.mao_esq && bone.name.includes("LeftHand")) ossos.mao_esq = bone;
 
-                case 10:
-                    ossos.braco_dir = bone;
-                    break;
+            if(!ossos.braco_dir && bone.name.includes("RightArm")) ossos.braco_dir = bone;
 
-                case 12:
-                    ossos.antebraco_dir = bone;
-                    break;
+            if(!ossos.mao_dir && bone.name.includes("RightHand")) ossos.mao_dir = bone;
 
-                case 119:
-                    ossos.coxa_esq = bone;
-                    break;
+            if(!ossos.coxa_esq && bone.name.includes("LeftUpLeg")) ossos.coxa_esq = bone;
 
-                case 121:
-                    ossos.perna_esq = bone;
-                    break;
+            if(!ossos.coxa_dir && bone.name.includes("RightUpLeg")) ossos.coxa_dir = bone;
 
-                case 109:
-                    ossos.coxa_dir = bone;
-                    break;
-
-                case 111:
-                    ossos.perna_dir = bone;
-                    break;
-
-                default:
-                    break;
-            }
+            if(!ossos.cabeca && bone.name.includes("Head")) ossos.cabeca = bone;
         });
-
-        // Escala o braço esquerdo
-        // escalarOssoI(ossos.quadril, new THREE.Vector3(1.7, 1, 1));
-        // escalarOsso(ossos.braco_esq, new THREE.Vector3(1, 1.7, 1));
-        // escalarOsso(ossos.braco_dir, new THREE.Vector3(1, 1.7, 1));
-        // escalarOssoI(ossos.coxa_dir, new THREE.Vector3(1, 1.7, 1));
-        // escalarOssoI(ossos.coxa_esq, new THREE.Vector3(1, 1.7, 1));
 
         //
     } catch (error) {
         console.error("Erro ao carregar o modelo:", error);
     }
+}
+
+function rodaAnimacao() {
+    playAnim = !playAnim;
+    if (playAnim) {
+        const action = model.mixer.clipAction(anim);
+        action.play();
+    }
+}
+
+// Função para escalar a cabeça em tamanho
+function escalarCabeca(value) {
+    escalarOssoI(ossos.cabeca, new THREE.Vector3(value, value, value));
+}
+
+// Função para escalar o tronco em comprimento
+function escalarTronco(value) {
+    escalarOssoI(ossos.tronco, new THREE.Vector3(1, value, 1));
+}
+
+// Função para escalar os braços em comprimento
+function escalarBracos(value) {
+    escalarOsso(ossos.braco_esq, new THREE.Vector3(1, value, 1));
+    escalarOsso(ossos.braco_dir, new THREE.Vector3(1, value, 1));
+    // escalarOsso(ossos.mao_esq, new THREE.Vector3(1, 1 / value, 1));
+    // escalarOsso(ossos.mao_dir, new THREE.Vector3(1, 1 / value, 1));
+}
+
+// Função para escalar as pernas em comprimento
+function escalarPernas(value) {
+    escalarOsso(ossos.coxa_esq, new THREE.Vector3(1, value, 1));
+    escalarOsso(ossos.coxa_dir, new THREE.Vector3(1, value, 1));
+    model.position.y = 0 + (value - 1);
 }
 
 // Função para escalar um osso
@@ -253,7 +269,7 @@ function escalarOsso(osso, vecEscala) {
 
 // Função para escalar um osso individualmente
 function escalarOssoI(osso, vecEscala) {
-    osso.scale.set(1 * vecEscala.x, 1 * vecEscala.y, 1 * vecEscala.z);
+    osso.scale.set(vecEscala.x, vecEscala.y, vecEscala.z);
     osso.children.forEach((child, index) => {
         child.scale.set(1 / vecEscala.x, 1 / vecEscala.y, 1 / vecEscala.z);
     });
