@@ -3,12 +3,27 @@ import { GUI } from "three/addons/libs/lil-gui.module.min.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader";
 
-let container, camera, scene, renderer, model, mixer, playAnim, anim;
+let container, camera, scene, renderer, model, mixer, playAnim;
+
+let animations = new Array();
 
 const fps = 60; // Limite de frames por segundo
 const fpsInterval = 1000 / fps; // Intervalo de tempo entre os frames em milissegundos
 
 const ossos = {};
+
+const debug_group = [];
+
+const params = {
+    bracos: 1,
+    pernas: 1,
+    tronco: 1,
+    cabeca: 1,
+    altura: 0.0,
+    comprimento_braco: 0.0,
+    comprimento_perna: 0.0,
+    anim: 0,
+};
 
 init();
 
@@ -35,7 +50,7 @@ async function init() {
 
     // contrução do modelo
 
-    loadAndAccessModel("models/Ch36_nonPBR.fbx", "anims/Idle.fbx"); // Espera o modelo ser carregado
+    loadAndAccessModel("models/Ch36_nonPBR.fbx"); // Espera o modelo ser carregado
 
     // helpers
 
@@ -90,15 +105,32 @@ async function init() {
 
             const delta = clock.getDelta(); // Obter o tempo desde o último frame
 
-            if (playAnim == true) { // Verificar se a animação deve ser reproduzida
-                if (mixer && model.mixer) { // Verificar se o mixer existe
-                    model.mixer.update(delta); // Atualizar o mixer
+            // Verificar se a animação deve ser reproduzida
+            if (playAnim == true) {
+                if (mixer) {
+                    // Verificar se o mixer existe
+                    mixer.update(delta); // Atualizar o mixer
+                }
+            } else {
+                if (mixer) {
+                    // Verificar se o mixer existe
+                    mixer.stopAllAction(); // Parar todas as animações
                 }
             }
-            else {
-                if (mixer && model.mixer) { // Verificar se o mixer existe
-                    model.mixer.stopAllAction(); // Parar todas as animações
+
+            if (ossos.cabeca_topo) params.altura = getAlturaTotal();
+
+            if (ossos.braco_esq) params.comprimento_braco = getComprimentoBracos();
+
+            if (ossos.coxa_esq) params.comprimento_perna = getComprimentoPernas();
+
+            // atualiza esferas de debug
+            let i = 0;
+            for (const [key, value] of Object.entries(ossos)) {
+                if (value) {
+                    debug_group[i].position.copy(value.getWorldPosition(new THREE.Vector3()));
                 }
+                i++;
             }
         }
 
@@ -110,15 +142,7 @@ async function init() {
 
 // Configurações de GUI
 function initGUI() {
-    const params = {
-        bracos: 1,
-        pernas: 1,
-        tronco: 1,
-        cabeca: 1,
-        anim: false,
-    };
-
-    const gui = new GUI({ title: "Membros" });
+    const gui = new GUI({ title: "Membros", width: 400 });
 
     gui.add(params, "bracos", 0.5, 1.5, 0.01).onChange(function (value) {
         escalarBracos(value);
@@ -136,13 +160,41 @@ function initGUI() {
         escalarCabeca(value);
     });
 
-    gui.add(params, "anim").onChange(function (value) {
-        rodaAnimacao();
+    const alturaController = gui.add(params, "altura").decimals(2).listen();
+    alturaController.domElement.querySelector("input").disabled = true;
+
+    const comprimentoBracosController = gui.add(params, "comprimento_braco").decimals(2).listen();
+    comprimentoBracosController.domElement.querySelector("input").disabled = true;
+
+    const comprimentoPernasController = gui.add(params, "comprimento_perna").decimals(2).listen();
+    comprimentoPernasController.domElement.querySelector("input").disabled = true;
+
+    gui.add(params, "anim", [0, 1, 2]).onChange(function (value) {
+        rodaAnimacao(value);
     });
 }
 
+function loadAnimation(object, animationURL) {
+    const loader = new FBXLoader();
+    // Carregar animação
+    loader.load(
+        animationURL,
+        function (animation) {
+            mixer = new THREE.AnimationMixer(object);
+            animations.push(animation.animations[0]);
+
+            // Armazenar o mixer para atualizar na função de renderização
+            object.mixer = mixer;
+        },
+        undefined,
+        function (error) {
+            console.error("Erro ao carregar a animação:", error);
+        }
+    );
+}
+
 // Função para carregar um modelo FBX na cena
-function loadModel(modelURL, animationURL) {
+function loadModel(modelURL) {
     return new Promise((resolve, reject) => {
         const loader = new FBXLoader();
         loader.load(
@@ -157,31 +209,11 @@ function loadModel(modelURL, animationURL) {
                 });
                 object.name = "model";
                 scene.add(object);
-
-                // Carregar animação
-                loader.load(
-                    animationURL,
-                    function (animation) {
-                        mixer = new THREE.AnimationMixer(object);
-                        anim = animation.animations[0];
-                        const action = mixer.clipAction(anim);
-                        action.play();
-
-                        // Armazenar o mixer para atualizar na função de renderização
-                        object.mixer = mixer;
-
-                        resolve(object); // Resolve a promessa com o objeto e a animação carregados
-                    },
-                    undefined,
-                    function (error) {
-                        console.error('Erro ao carregar a animação:', error);
-                        reject(error); // Rejeita a promessa se houver um erro ao carregar a animação
-                    }
-                );
+                resolve(object);
             },
             undefined,
             function (error) {
-                console.error('Erro ao carregar o modelo:', error);
+                console.error("Erro ao carregar o modelo:", error);
                 reject(error); // Rejeita a promessa se houver um erro ao carregar o modelo
             }
         );
@@ -201,26 +233,63 @@ async function loadAndAccessModel(modelURL, animationURL) {
         // Definir ossos de interesse
         skeletonHelper.bones.forEach((bone, index) => {
             console.log(`Bone ${index}: ${bone.name}`);
-            if(!ossos.tronco 
-                && bone.name.includes("Spine") 
-                && !bone.name.includes("Spine1") 
-                && !bone.name.includes("Spine2")) 
+
+            if (!ossos.quadril && bone.name.includes("Hip")) ossos.quadril = bone;
+
+            if (
+                !ossos.tronco &&
+                bone.name.includes("Spine") &&
+                !bone.name.includes("Spine1") &&
+                !bone.name.includes("Spine2")
+            )
                 ossos.tronco = bone;
 
-            if(!ossos.braco_esq && bone.name.includes("LeftArm")) ossos.braco_esq = bone;
+            if (!ossos.braco_esq && bone.name.includes("LeftArm")) ossos.braco_esq = bone;
 
-            if(!ossos.mao_esq && bone.name.includes("LeftHand")) ossos.mao_esq = bone;
+            if (!ossos.mao_esq && bone.name.includes("LeftHand")) ossos.mao_esq = bone;
 
-            if(!ossos.braco_dir && bone.name.includes("RightArm")) ossos.braco_dir = bone;
+            if (!ossos.braco_dir && bone.name.includes("RightArm")) ossos.braco_dir = bone;
 
-            if(!ossos.mao_dir && bone.name.includes("RightHand")) ossos.mao_dir = bone;
+            if (!ossos.mao_dir && bone.name.includes("RightHand")) ossos.mao_dir = bone;
 
-            if(!ossos.coxa_esq && bone.name.includes("LeftUpLeg")) ossos.coxa_esq = bone;
+            if (!ossos.coxa_esq && bone.name.includes("LeftUpLeg")) ossos.coxa_esq = bone;
 
-            if(!ossos.coxa_dir && bone.name.includes("RightUpLeg")) ossos.coxa_dir = bone;
+            if (!ossos.pe_esq && bone.name.includes("LeftFoot")) ossos.pe_esq = bone;
 
-            if(!ossos.cabeca && bone.name.includes("Head")) ossos.cabeca = bone;
+            if (!ossos.coxa_dir && bone.name.includes("RightUpLeg")) ossos.coxa_dir = bone;
+
+            if (!ossos.pe_dir && bone.name.includes("RightFoot")) ossos.pe_dir = bone;
+
+            if (!ossos.cabeca && bone.name.includes("Head")) ossos.cabeca = bone;
+
+            if (!ossos.cabeca_topo && bone.name.includes("HeadTop_End")) ossos.cabeca_topo = bone;
         });
+
+        // Carregar animações
+        loadAnimation(model, "anims/Idle.fbx");
+        loadAnimation(model, "anims/Rumba_Dancing.fbx");
+
+        // Criar esferas de debug para os ossos
+        const sphereGeometry = new THREE.SphereGeometry(0.05);
+        const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+
+        for (const [key, value] of Object.entries(ossos)) {
+            if (value) {
+                const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+                sphere.renderOrder = 999;
+                sphere.material.depthTest = false;
+                sphere.material.depthWrite = false;
+                sphere.onBeforeRender = function (renderer) {
+                    renderer.clearDepth();
+                };
+                sphere.position.copy(value.getWorldPosition(new THREE.Vector3()));
+                sphere.name = value.name;
+                debug_group.push(sphere);
+                scene.add(sphere);
+            }
+        }
+
+        console.log(debug_group);
 
         //
     } catch (error) {
@@ -228,12 +297,31 @@ async function loadAndAccessModel(modelURL, animationURL) {
     }
 }
 
-function rodaAnimacao() {
-    playAnim = !playAnim;
-    if (playAnim) {
-        const action = model.mixer.clipAction(anim);
+function rodaAnimacao(index) {
+    if (index == 0) playAnim = false;
+    else {
+        playAnim = true;
+        mixer.stopAllAction();
+        const action = mixer.clipAction(animations[index - 1]);
         action.play();
     }
+}
+
+function getAlturaTotal() {
+    return ossos.cabeca_topo.getWorldPosition(new THREE.Vector3()).y;
+}
+
+function getComprimentoBracos() {
+    return ossos.braco_esq
+        .getWorldPosition(new THREE.Vector3())
+        .distanceTo(ossos.mao_esq.getWorldPosition(new THREE.Vector3()));
+}
+
+function getComprimentoPernas() {
+    const pe_esq = new THREE.Vector3();
+    ossos.pe_esq.getWorldPosition(pe_esq);
+    const aux = ossos.coxa_esq.getWorldPosition(new THREE.Vector3()).distanceTo(pe_esq);
+    return aux + pe_esq.distanceTo(new THREE.Vector3(0, pe_esq.y, 0));
 }
 
 // Função para escalar a cabeça em tamanho
