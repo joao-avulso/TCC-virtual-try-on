@@ -42,7 +42,7 @@ async function init() {
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xedf4ff);
-    scene.fog = new THREE.Fog(0xedf4ff, 1, 30);
+    // scene.fog = new THREE.Fog(0xedf4ff, 1, 30);
 
     // camera
 
@@ -53,27 +53,27 @@ async function init() {
 
     // contrução do modelo
 
-    loadAndAccessModel("models/blender.fbx"); // Carrega o modelo na cena
+    loadAndAccessModel("models/f_padrao.fbx"); // Carrega o modelo na cena
 
     // helpers
 
-    const gridHelper = new THREE.GridHelper(1000, 1000);
-    scene.add(gridHelper);
+    // const gridHelper = new THREE.GridHelper(1000, 1000);
+    // scene.add(gridHelper);
 
     // iluminação
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 2.5);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 3.5);
     scene.add(ambientLight);
 
     const pointLight = new THREE.PointLight(0xffffff, 50);
-    pointLight.position.set(4, 2, 0);
+    pointLight.position.set(2, 2, 2);
     scene.add(pointLight);
 
     const pointLight2 = new THREE.PointLight(0x4287f5, 100);
     pointLight2.position.set(-4, 0, -2);
     scene.add(pointLight2);
 
-    const pointLight3 = new THREE.PointLight(0xf5e749, 100);
+    const pointLight3 = new THREE.PointLight(0xf5e749, 150);
     pointLight3.position.set(4, 3, -2);
     scene.add(pointLight3);
 
@@ -202,7 +202,7 @@ function loadModel(modelURL) {
             modelURL,
             function (object) {
                 // const object = gltf.scenes[0].children[0];
-                object.scale.setScalar(0.01);
+                object.scale.setScalar(0.0011);
                 object.traverse(function (child) {
                     if (child.isMesh) {
                         let morphChange = () => {
@@ -266,15 +266,15 @@ async function loadAndAccessModel(modelURL, animationURL) {
 
             if (!ossos.cabeca && bone.name.includes("Head")) ossos.cabeca = bone;
 
-            if (!ossos.cabeca_topo && bone.name.includes("HeadTop_End")) ossos.cabeca_topo = bone;
+            if (!ossos.cabeca_topo && bone.name.includes("Head_end")) ossos.cabeca_topo = bone;
         });
 
         model.morphTargets;
 
         // Carregar animações
-        loadAnimation(model, "anims/Idle.fbx");
-        loadAnimation(model, "anims/Rumba_Dancing.fbx");
-        loadAnimation(model, "anims/Hurricane_Kick.fbx");
+        // loadAnimation(model, "anims/Idle.fbx");
+        // loadAnimation(model, "anims/Rumba_Dancing.fbx");
+        // loadAnimation(model, "anims/Hurricane_Kick.fbx");
 
         // Criar esferas de debug para os ossos
         // const sphereGeometry = new THREE.SphereGeometry(0.05);
