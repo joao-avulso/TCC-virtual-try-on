@@ -14,6 +14,8 @@ const ossos = {};
 
 const debug_group = [];
 
+const gui = new GUI({ title: "Membros", width: 400 });
+
 const params = {
     bracos: 1,
     pernas: 1,
@@ -23,6 +25,7 @@ const params = {
     comprimento_braco: 0.0,
     comprimento_perna: 0.0,
     anim: 0,
+    morph: 0,
 };
 
 init();
@@ -50,7 +53,7 @@ async function init() {
 
     // contrução do modelo
 
-    loadAndAccessModel("models/Ch36_nonPBR.fbx"); // Espera o modelo ser carregado
+    loadAndAccessModel("models/blender.fbx"); // Carrega o modelo na cena
 
     // helpers
 
@@ -59,7 +62,7 @@ async function init() {
 
     // iluminação
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 2.5);
     scene.add(ambientLight);
 
     const pointLight = new THREE.PointLight(0xffffff, 50);
@@ -127,7 +130,7 @@ async function init() {
             // atualiza esferas de debug
             let i = 0;
             for (const [key, value] of Object.entries(ossos)) {
-                if (value) {
+                if (value && debug_group[i]) {
                     debug_group[i].position.copy(value.getWorldPosition(new THREE.Vector3()));
                 }
                 i++;
@@ -142,8 +145,6 @@ async function init() {
 
 // Configurações de GUI
 function initGUI() {
-    const gui = new GUI({ title: "Membros", width: 400 });
-
     gui.add(params, "bracos", 0.5, 1.5, 0.01).onChange(function (value) {
         escalarBracos(value);
     });
@@ -169,7 +170,7 @@ function initGUI() {
     const comprimentoPernasController = gui.add(params, "comprimento_perna").decimals(2).listen();
     comprimentoPernasController.domElement.querySelector("input").disabled = true;
 
-    gui.add(params, "anim", [0, 1, 2]).onChange(function (value) {
+    gui.add(params, "anim", [0, 1, 2, 3]).onChange(function (value) {
         rodaAnimacao(value);
     });
 }
@@ -200,11 +201,14 @@ function loadModel(modelURL) {
         loader.load(
             modelURL,
             function (object) {
+                // const object = gltf.scenes[0].children[0];
                 object.scale.setScalar(0.01);
                 object.traverse(function (child) {
                     if (child.isMesh) {
-                        child.castShadow = true;
-                        child.receiveShadow = true;
+                        let morphChange = () => {
+                            child.morphTargetInfluences[0] = params.morph;
+                        };
+                        gui.add(params, "morph", 0, 1).onChange(morphChange);
                     }
                 });
                 object.name = "model";
@@ -265,31 +269,32 @@ async function loadAndAccessModel(modelURL, animationURL) {
             if (!ossos.cabeca_topo && bone.name.includes("HeadTop_End")) ossos.cabeca_topo = bone;
         });
 
+        model.morphTargets;
+
         // Carregar animações
         loadAnimation(model, "anims/Idle.fbx");
         loadAnimation(model, "anims/Rumba_Dancing.fbx");
+        loadAnimation(model, "anims/Hurricane_Kick.fbx");
 
         // Criar esferas de debug para os ossos
-        const sphereGeometry = new THREE.SphereGeometry(0.05);
-        const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        // const sphereGeometry = new THREE.SphereGeometry(0.05);
+        // const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
 
-        for (const [key, value] of Object.entries(ossos)) {
-            if (value) {
-                const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-                sphere.renderOrder = 999;
-                sphere.material.depthTest = false;
-                sphere.material.depthWrite = false;
-                sphere.onBeforeRender = function (renderer) {
-                    renderer.clearDepth();
-                };
-                sphere.position.copy(value.getWorldPosition(new THREE.Vector3()));
-                sphere.name = value.name;
-                debug_group.push(sphere);
-                scene.add(sphere);
-            }
-        }
-
-        console.log(debug_group);
+        // for (const [key, value] of Object.entries(ossos)) {
+        //     if (value) {
+        //         const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        //         sphere.renderOrder = 999;
+        //         sphere.material.depthTest = false;
+        //         sphere.material.depthWrite = false;
+        //         sphere.onBeforeRender = function (renderer) {
+        //             renderer.clearDepth();
+        //         };
+        //         sphere.position.copy(value.getWorldPosition(new THREE.Vector3()));
+        //         sphere.name = value.name;
+        //         debug_group.push(sphere);
+        //         scene.add(sphere);
+        //     }
+        // }
 
         //
     } catch (error) {
