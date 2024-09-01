@@ -1,9 +1,12 @@
 import * as THREE from "three";
 import { GUI } from "three/addons/libs/lil-gui.module.min.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { ObjectControls } from './ObjectControls.js';
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader";
+import { VertexNormalsHelper } from 'three/addons/helpers/VertexNormalsHelper.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
-let container, camera, scene, renderer, model, mixer, playAnim;
+let container, camera, scene, renderer, model, mixer, playAnim, mesh;
 
 let animations = new Array();
 
@@ -12,11 +15,10 @@ const fpsInterval = 1000 / fps; // Intervalo de tempo entre os frames em milisse
 
 const ossos = {};
 
-const debug_group = [];
-
 const gui = new GUI({ title: "Membros", width: 400 });
 
 const params = {
+    tamanho: 1,
     bracos: 1,
     pernas: 1,
     tronco: 1,
@@ -25,8 +27,28 @@ const params = {
     comprimento_braco: 0.0,
     comprimento_perna: 0.0,
     anim: 0,
-    morph: 0,
+    musculatura: 0.5,
+    peso: 0,
+    busto: 0.5,
+    ampulheta: 0,
+    maça: 0,
+    diamante: 0,
+    triangulo: 0,
+    triangulo_invertido: 0,
+    retangulo: 0,
+    coluna: 0,
+    aplicar: function () {
+        aplicarAlteracoes();
+        for (let i = 0; i < gui.controllers.length; i++) {
+            if (gui.controllers[i].property != "altura" && gui.controllers[i].property != "comprimento_braco" && gui.controllers[i].property != "comprimento_perna"){
+                gui.controllers[i].disable();
+                gui.controllers[i].hide();
+
+            }
+        }
+    }
 };
+
 
 init();
 
@@ -34,33 +56,27 @@ async function init() {
     container = document.getElementById("container");
     playAnim = false;
 
-    // clock
+    // Clock
 
     const clock = new THREE.Clock();
 
-    // cena
+    // Cena
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xedf4ff);
-    // scene.fog = new THREE.Fog(0xedf4ff, 1, 30);
+    scene.background = new THREE.Color(0xb8c5d9);
 
-    // camera
+    // Camera
 
     camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 100);
-    camera.position.z = 4;
-    camera.position.y = 1.5;
+    camera.position.z = 3;
+    camera.position.y = 1;
     scene.add(camera);
 
-    // contrução do modelo
+    // Construção do modelo
 
-    loadAndAccessModel("models/f_padrao.fbx"); // Carrega o modelo na cena
+    initModelo("models/f_padrao.fbx");
 
-    // helpers
-
-    // const gridHelper = new THREE.GridHelper(1000, 1000);
-    // scene.add(gridHelper);
-
-    // iluminação
+    // Iluminação
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 3.5);
     scene.add(ambientLight);
@@ -73,29 +89,37 @@ async function init() {
     pointLight2.position.set(-4, 0, -2);
     scene.add(pointLight2);
 
-    const pointLight3 = new THREE.PointLight(0xf5e749, 150);
+    const pointLight3 = new THREE.PointLight(0xffffff, 150);
     pointLight3.position.set(4, 3, -2);
     scene.add(pointLight3);
+
+    const pointLight5 = new THREE.PointLight(0xffffff, 20);
+    pointLight5.position.set(-2, 2, 2);
+    scene.add(pointLight5);
 
     // GUI
 
     initGUI();
 
-    // render
+    // Render
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
 
-    // controles de camera
+    // Controles de camera
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 1, 0);
-    controls.minPolarAngle = Math.PI / 2;
-    controls.maxPolarAngle = Math.PI / 2;
-    controls.update();
+    const cameraControls = new OrbitControls(camera, renderer.domElement);
+    cameraControls.target.set(0, 1, 0);
+    cameraControls.enablePan = false;
+    cameraControls.enableRotate = false;
+    cameraControls.maxDistance = 4;
+    cameraControls.minDistance = 2;
+    cameraControls.update();
+    while (mesh === undefined) {await new Promise((resolve) => setTimeout(resolve, 100));}
+    const objectControls = new ObjectControls(ossos.quadril, renderer.domElement);
 
-    // loop de renderização
+    // Loop de renderização
 
     let lastFrameTime = Date.now(); // Tempo do último frame
 
@@ -116,7 +140,6 @@ async function init() {
                 }
             } else {
                 if (mixer) {
-                    // Verificar se o mixer existe
                     mixer.stopAllAction(); // Parar todas as animações
                 }
             }
@@ -126,15 +149,6 @@ async function init() {
             if (ossos.braco_esq) params.comprimento_braco = getComprimentoBracos();
 
             if (ossos.coxa_esq) params.comprimento_perna = getComprimentoPernas();
-
-            // atualiza esferas de debug
-            let i = 0;
-            for (const [key, value] of Object.entries(ossos)) {
-                if (value && debug_group[i]) {
-                    debug_group[i].position.copy(value.getWorldPosition(new THREE.Vector3()));
-                }
-                i++;
-            }
         }
 
         renderer.render(scene, camera);
@@ -145,15 +159,19 @@ async function init() {
 
 // Configurações de GUI
 function initGUI() {
-    gui.add(params, "bracos", 0.5, 1.5, 0.01).onChange(function (value) {
+    gui.add(params, "tamanho", 0.85, 1.15, 0.01).onChange(function (value) {
+        escalarTamanho(value);
+    });
+
+    gui.add(params, "bracos", 0.85, 1.15, 0.01).onChange(function (value) {
         escalarBracos(value);
     });
 
-    gui.add(params, "pernas", 0.5, 1.5, 0.01).onChange(function (value) {
+    gui.add(params, "pernas", 0.75, 1.25, 0.01).onChange(function (value) {
         escalarPernas(value);
     });
 
-    gui.add(params, "tronco", 0.5, 1.5, 0.01).onChange(function (value) {
+    gui.add(params, "tronco", 0.85, 1.15, 0.01).onChange(function (value) {
         escalarTronco(value);
     });
 
@@ -173,9 +191,11 @@ function initGUI() {
     gui.add(params, "anim", [0, 1, 2, 3]).onChange(function (value) {
         rodaAnimacao(value);
     });
+
+    gui.add(params, "aplicar");
 }
 
-function loadAnimation(object, animationURL) {
+function carregaAnimacao(object, animationURL) {
     const loader = new FBXLoader();
     // Carregar animação
     loader.load(
@@ -194,21 +214,45 @@ function loadAnimation(object, animationURL) {
     );
 }
 
+function atualizaMorphs() {
+    if (mesh) {
+        mesh.morphTargetInfluences[9] = params.coluna;
+        mesh.morphTargetInfluences[8] = params.retangulo;
+        mesh.morphTargetInfluences[7] = params.triangulo_invertido;
+        mesh.morphTargetInfluences[6] = params.triangulo;
+        mesh.morphTargetInfluences[5] = params.diamante;
+        mesh.morphTargetInfluences[4] = params.maça;
+        mesh.morphTargetInfluences[3] = params.ampulheta;
+        mesh.morphTargetInfluences[2] = params.busto;
+        mesh.morphTargetInfluences[1] = params.peso;
+        mesh.morphTargetInfluences[0] = params.musculatura;
+    }
+};
+
 // Função para carregar um modelo FBX na cena
-function loadModel(modelURL) {
+function carregaModelo(modelURL) {
     return new Promise((resolve, reject) => {
         const loader = new FBXLoader();
         loader.load(
             modelURL,
             function (object) {
-                // const object = gltf.scenes[0].children[0];
                 object.scale.setScalar(0.0011);
                 object.traverse(function (child) {
                     if (child.isMesh) {
-                        let morphChange = () => {
-                            child.morphTargetInfluences[0] = params.morph;
-                        };
-                        gui.add(params, "morph", 0, 1).onChange(morphChange);
+                        child.geometry = BufferGeometryUtils.mergeVertices(child.geometry);
+                        gui.add(params, "musculatura", 0, 1, 0.05).onChange(atualizaMorphs);
+                        gui.add(params, "peso", 0, 1, 0.05).onChange(atualizaMorphs);
+                        gui.add(params, "busto", 0, 1, 0.05).onChange(atualizaMorphs);
+                        gui.add(params, "ampulheta", 0, 1, 0.05).onChange(atualizaMorphs);
+                        gui.add(params, "maça", 0, 1, 0.05).onChange(atualizaMorphs);
+                        gui.add(params, "diamante", 0, 1, 0.05).onChange(atualizaMorphs);
+                        gui.add(params, "triangulo", 0, 1, 0.05).onChange(atualizaMorphs);
+                        gui.add(params, "triangulo_invertido", 0, 1, 0.05).onChange(atualizaMorphs);
+                        gui.add(params, "retangulo", 0, 1, 0.05).onChange(atualizaMorphs);
+                        gui.add(params, "coluna", 0, 1, 0.05).onChange(atualizaMorphs);
+                        child.geometry.morphTargetsRelative = true;
+                        mesh = child;
+                        atualizaMorphs();
                     }
                 });
                 object.name = "model";
@@ -224,10 +268,10 @@ function loadModel(modelURL) {
     });
 }
 
-// Função assíncrona para carregar o modelo e então acessá-lo
-async function loadAndAccessModel(modelURL, animationURL) {
+// Função assíncrona para inicializar modelo e animação
+async function initModelo(modelURL, animationURL) {
     try {
-        model = await loadModel(modelURL, animationURL); // Espera o modelo ser carregado
+        model = await carregaModelo(modelURL, animationURL); // Espera o modelo ser carregado
         console.log("Modelo carregado:", model);
 
         // Desenhar o esqueleto e acessar skeleton Helper
@@ -238,21 +282,19 @@ async function loadAndAccessModel(modelURL, animationURL) {
         skeletonHelper.bones.forEach((bone, index) => {
             console.log(`Bone ${index}: ${bone.name}`);
 
-            if (!ossos.quadril && bone.name.includes("Hip")) ossos.quadril = bone;
+            if (!ossos.quadril && bone.name.includes("Hips")) ossos.quadril = bone;
 
-            if (
-                !ossos.tronco &&
-                bone.name.includes("Spine") &&
-                !bone.name.includes("Spine1") &&
-                !bone.name.includes("Spine2")
-            )
-                ossos.tronco = bone;
+            if (!ossos.tronco && bone.name.includes("LowerBack")) ossos.tronco = bone;
 
             if (!ossos.braco_esq && bone.name.includes("LeftArm")) ossos.braco_esq = bone;
 
             if (!ossos.mao_esq && bone.name.includes("LeftHand")) ossos.mao_esq = bone;
 
+            if (!ossos.ant_braco_esq && bone.name.includes("LeftForeArm")) ossos.ant_braco_esq = bone
+
             if (!ossos.braco_dir && bone.name.includes("RightArm")) ossos.braco_dir = bone;
+
+            if (!ossos.ant_braco_dir && bone.name.includes("RightForeArm")) ossos.ant_braco_dir = bone;
 
             if (!ossos.mao_dir && bone.name.includes("RightHand")) ossos.mao_dir = bone;
 
@@ -269,36 +311,17 @@ async function loadAndAccessModel(modelURL, animationURL) {
             if (!ossos.cabeca_topo && bone.name.includes("Head_end")) ossos.cabeca_topo = bone;
         });
 
-        model.morphTargets;
-
-        // Carregar animações
-        // loadAnimation(model, "anims/Idle.fbx");
-        // loadAnimation(model, "anims/Rumba_Dancing.fbx");
-        // loadAnimation(model, "anims/Hurricane_Kick.fbx");
-
-        // Criar esferas de debug para os ossos
-        // const sphereGeometry = new THREE.SphereGeometry(0.05);
-        // const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-
-        // for (const [key, value] of Object.entries(ossos)) {
-        //     if (value) {
-        //         const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-        //         sphere.renderOrder = 999;
-        //         sphere.material.depthTest = false;
-        //         sphere.material.depthWrite = false;
-        //         sphere.onBeforeRender = function (renderer) {
-        //             renderer.clearDepth();
-        //         };
-        //         sphere.position.copy(value.getWorldPosition(new THREE.Vector3()));
-        //         sphere.name = value.name;
-        //         debug_group.push(sphere);
-        //         scene.add(sphere);
-        //     }
-        // }
-
-        //
     } catch (error) {
         console.error("Erro ao carregar o modelo:", error);
+    }
+}
+
+function aplicarAlteracoes() {
+    if (mesh) {
+        mesh.geometry.setAttribute('position', BufferGeometryUtils.computeMorphedAttributes(mesh).morphedPositionAttribute);
+        mesh.updateMorphTargets();
+        resetarEscalas();
+        mesh.geometry.computeVertexNormals();
     }
 }
 
@@ -317,16 +340,29 @@ function getAlturaTotal() {
 }
 
 function getComprimentoBracos() {
-    return ossos.braco_esq
-        .getWorldPosition(new THREE.Vector3())
-        .distanceTo(ossos.mao_esq.getWorldPosition(new THREE.Vector3()));
+    const braco = ossos.braco_esq.getWorldPosition(new THREE.Vector3());
+    const ant_braco = ossos.ant_braco_esq.getWorldPosition(new THREE.Vector3());
+    const mao = ossos.mao_esq.getWorldPosition(new THREE.Vector3());
+    return braco.distanceTo(ant_braco) + ant_braco.distanceTo(mao);
 }
 
 function getComprimentoPernas() {
-    const pe_esq = new THREE.Vector3();
-    ossos.pe_esq.getWorldPosition(pe_esq);
-    const aux = ossos.coxa_esq.getWorldPosition(new THREE.Vector3()).distanceTo(pe_esq);
-    return aux + pe_esq.distanceTo(new THREE.Vector3(0, pe_esq.y, 0));
+    return ossos.quadril.getWorldPosition(new THREE.Vector3()).y;
+}
+
+// Função para resetar todas as escalas
+function resetarEscalas() {
+    escalarTamanho(1, false);
+    escalarBracos(1);
+    escalarPernas(1, false);
+    escalarTronco(1);
+    escalarCabeca(1);
+}
+
+// Função para escalar as dimensões totais do modelo
+function escalarTamanho(value, mover = true) {
+    escalarOsso(ossos.quadril, new THREE.Vector3(value, value, value));
+    if (mover) model.position.y = 0 + (value - 1) + (params.pernas - 1);
 }
 
 // Função para escalar a cabeça em tamanho
@@ -343,15 +379,13 @@ function escalarTronco(value) {
 function escalarBracos(value) {
     escalarOsso(ossos.braco_esq, new THREE.Vector3(1, value, 1));
     escalarOsso(ossos.braco_dir, new THREE.Vector3(1, value, 1));
-    // escalarOsso(ossos.mao_esq, new THREE.Vector3(1, 1 / value, 1));
-    // escalarOsso(ossos.mao_dir, new THREE.Vector3(1, 1 / value, 1));
 }
 
 // Função para escalar as pernas em comprimento
-function escalarPernas(value) {
+function escalarPernas(value, mover = true) {
     escalarOsso(ossos.coxa_esq, new THREE.Vector3(1, value, 1));
     escalarOsso(ossos.coxa_dir, new THREE.Vector3(1, value, 1));
-    model.position.y = 0 + (value - 1);
+    if (mover) model.position.y = 0 + (value - 1) + (params.tamanho - 1);
 }
 
 // Função para escalar um osso
@@ -362,10 +396,10 @@ function escalarOsso(osso, vecEscala) {
 
 // Função para escalar um osso individualmente
 function escalarOssoI(osso, vecEscala) {
-    osso.scale.set(vecEscala.x, vecEscala.y, vecEscala.z);
     osso.children.forEach((child, index) => {
         child.scale.set(1 / vecEscala.x, 1 / vecEscala.y, 1 / vecEscala.z);
     });
+    osso.scale.set(vecEscala.x, vecEscala.y, vecEscala.z);
     osso.updateMatrixWorld(true);
 }
 
