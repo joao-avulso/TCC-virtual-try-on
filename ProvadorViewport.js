@@ -7,100 +7,29 @@ import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
 
 /**
  * Instancia um novo viewport do provador virtual no elemento definido por containerId.
- *
+ * @param {String} containerId - Id do elemento html que conterá o viewport
  * @example
  * const Provador = new ProvadorViewport("container");
  */
 export class ProvadorViewport {
-    /**
-     * Elemento html que conterá o viewport
-     */
+    /** Elemento html que conterá o viewport */
     #container
 
-    /**
-     * Limite de frames por segundo
-     */
+    /** Limite de frames por segundo */
     #fps = 60;
 
-    /**
-     * Intervalo de tempo entre frames
-     */
+    /** Intervalo de tempo entre frames */
     #fpsInterval = 1000 / this.#fps;
 
-    /**
-     * Cena 3D do viewport
-     */
+    /** Cena 3D do viewport */
     #scene = new THREE.Scene();
 
-    /**
-     * Renderizador do viewport
-     */
+    /** Renderizador do viewport */
     #renderer = new THREE.WebGLRenderer({ antialias: true });
     
-    /**
-     * THREE.Mesh do modelo 3D
-     */
-    #malha = new THREE.Mesh();
-
-    /**
-     * THREE.Object3D do modelo 3D
-     */
-    #model = new THREE.Object3D();
-
-    /**
-     * Objeto contendo os ossos do modelo 3D
-     */
-    #ossos = new Object();
-
-    /**
-     * Mixer para animações do modelo 3D
-     */
-    #mixer = new THREE.AnimationMixer();
-
-    /**
-     * Flag para controlar a reprodução da animação
-     */
-    #playAnim = false;
+    /** Instância do modelo de manequim */
+    #modelo = new Modelo(this.#scene, this.#renderer, "models/f_padrao.fbx");
     
-    /**
-     * Interface gráfica simples embutida
-     */
-    #gui = new GUI({ title: "Membros", width: 400 });
-
-    /**
-     * Parâmetros para customização do modelo 3D
-     */
-    #params = {
-        tamanho: 1,
-        bracos: 1,
-        pernas: 1,
-        tronco: 1,
-        cabeca: 1,
-        altura: 0.0,
-        comprimento_braco: 0.0,
-        comprimento_perna: 0.0,
-        anim: 0,
-        musculatura: 0.5,
-        peso: 0,
-        busto: 0.5,
-        ampulheta: 0,
-        maça: 0,
-        diamante: 0,
-        triangulo: 0,
-        triangulo_invertido: 0,
-        retangulo: 0,
-        coluna: 0,
-        aplicar: () => {
-            this.aplicarAlteracoes();
-            for (let i = 0; i < this.#gui.controllers.length; i++) {
-                if (this.#gui.controllers[i].property != "altura" && this.#gui.controllers[i].property != "comprimento_braco" && this.#gui.controllers[i].property != "comprimento_perna"){
-                    this.#gui.controllers[i].disable();
-                    this.#gui.controllers[i].hide();
-                }
-            }
-        }
-    };
-
     constructor(containerId) {
 
         // Obter o elemento html que conterá o viewport
@@ -147,13 +76,9 @@ export class ProvadorViewport {
         this.#scene.add(pointLight3);
         this.#scene.add(pointLight4);
 
-
-        // Inicializando a interface
-        this.initGUI();
-
-
-        // Inicializa modelo
-        this.initModelo("models/f_padrao.fbx");
+        
+        // Inicializando o modelo
+        this.#modelo.initModelo();
 
 
         // Loop de renderização
@@ -168,6 +93,7 @@ export class ProvadorViewport {
             if (elapsed > this.#fpsInterval) {
                 lastFrameTime = now - (elapsed % this.#fpsInterval); // Ajustar o tempo para o tempo restante
 
+                /*
                 const delta = clock.getDelta(); // Obter o tempo desde o último frame
 
                 // Verificar se a animação deve ser reproduzida
@@ -181,13 +107,14 @@ export class ProvadorViewport {
                         this.#mixer.stopAllAction(); // Parar todas as animações
                     }
                 }
+                */
 
                 // Atualizar informações de altura e comprimento dos membros
-                if (this.#ossos.cabeca_topo) this.#params.altura = this.getAlturaTotal();
+                if (this.#modelo.ossos.cabeca_topo) this.#modelo.params.altura = this.#modelo.getAlturaTotal();
 
-                if (this.#ossos.braco_esq) this.#params.comprimento_braco = this.getComprimentoBracos();
+                if (this.#modelo.ossos.braco_esq) this.#modelo.params.comprimento_braco = this.#modelo.getComprimentoBracos();
 
-                if (this.#ossos.coxa_esq) this.#params.comprimento_perna = this.getComprimentoPernas();
+                if (this.#modelo.ossos.coxa_esq) this.#modelo.params.comprimento_perna = this.#modelo.getComprimentoPernas();
             }
 
             this.#renderer.render(this.#scene, camera);
@@ -211,49 +138,149 @@ export class ProvadorViewport {
     }
 
 
+    /** Inicializa uma interface gráfica simples para customização do manequim */
     initGUI() {
-        this.#gui.add(this.#params, "tamanho", 0.85, 1.15, 0.01).onChange((value) => {
-            this.escalarTamanho(value);
-        });
-    
-        this.#gui.add(this.#params, "bracos", 0.85, 1.15, 0.01).onChange((value) => {
-            this.escalarBracos(value);
-        });
-    
-        this.#gui.add(this.#params, "pernas", 0.75, 1.25, 0.01).onChange((value) => {
-            this.escalarPernas(value);
-        });
-    
-        this.#gui.add(this.#params, "tronco", 0.85, 1.15, 0.01).onChange((value) => {
-            this.escalarTronco(value);
-        });
-    
-        this.#gui.add(this.#params, "cabeca", 0.9, 1.1, 0.01).onChange((value) => {
-            this.escalarCabeca(value);
-        });
-    
-        const alturaController = this.#gui.add(this.#params, "altura").decimals(2).listen();
+        const gui = new GUI({ title: "Customização de manequim", width: 400 });
+
+        this.#modelo.setGui(gui);
+
+        const alturaController = gui.add(this.#modelo.params, "altura").decimals(2).listen();
         alturaController.domElement.querySelector("input").disabled = true;
     
-        const comprimentoBracosController = this.#gui.add(this.#params, "comprimento_braco").decimals(2).listen();
+        const comprimentoBracosController = gui.add(this.#modelo.params, "comprimento_braco").decimals(2).listen();
         comprimentoBracosController.domElement.querySelector("input").disabled = true;
     
-        const comprimentoPernasController = this.#gui.add(this.#params, "comprimento_perna").decimals(2).listen();
+        const comprimentoPernasController = gui.add(this.#modelo.params, "comprimento_perna").decimals(2).listen();
         comprimentoPernasController.domElement.querySelector("input").disabled = true;
+
+        gui.add(this.#modelo.params, "tamanho", 0.85, 1.15, 0.01).onChange((value) => {
+            this.#modelo.escalarTamanho(value);
+        });
     
-        // this.#gui.add(this.#params, "anim", [0, 1, 2, 3]).onChange(function (value) {
-        //     rodaAnimacao(value);
-        // });
+        gui.add(this.#modelo.params, "bracos", 0.85, 1.15, 0.01).onChange((value) => {
+            this.#modelo.escalarBracos(value);
+        });
     
-        this.#gui.add(this.#params, "aplicar");
+        gui.add(this.#modelo.params, "pernas", 0.75, 1.25, 0.01).onChange((value) => {
+            this.#modelo.escalarPernas(value);
+        });
+    
+        gui.add(this.#modelo.params, "tronco", 0.85, 1.15, 0.01).onChange((value) => {
+            this.#modelo.escalarTronco(value);
+        });
+    
+        gui.add(this.#modelo.params, "cabeca", 0.9, 1.1, 0.01).onChange((value) => {
+            this.#modelo.escalarCabeca(value);
+        });
+
+        gui.add(this.#modelo.params, "musculatura", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
+        gui.add(this.#modelo.params, "peso", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
+        gui.add(this.#modelo.params, "busto", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
+        gui.add(this.#modelo.params, "ampulheta", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
+        gui.add(this.#modelo.params, "maça", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
+        gui.add(this.#modelo.params, "diamante", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
+        gui.add(this.#modelo.params, "triangulo", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
+        gui.add(this.#modelo.params, "triangulo_invertido", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
+        gui.add(this.#modelo.params, "retangulo", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
+        gui.add(this.#modelo.params, "coluna", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
+
+        gui.add(this.#modelo.params, "aplicar");
+    }
+}
+
+
+/**
+ * Instanciar um novo modelo para exibição no provador virtual.
+ * @param {THREE.Scene} scene - Cena 3D do viewport
+ * @param {THREE.WebGLRenderer} renderer - Renderizador do viewport
+ * @param {String} url - URL do arquivo do modelo 3D
+ */
+class Modelo {
+    /** Instância da cena 3D */
+    #scene
+
+    /** Instância da interface gráfica */
+    #gui
+
+    /** Instância do renderizador */
+    #renderer
+
+    /** URL do arquivo do modelo 3D */
+    #url = new String();
+
+    /** Objeto 3D do modelo */
+    #model = new THREE.Object3D();
+
+    /** Malha 3D do modelo */
+    #malha = new THREE.Mesh();
+
+    /** Objeto contendo os ossos do modelo */
+    ossos = new Object();
+
+    /** Parâmetros para customização do modelo 3D */
+    params = {
+        tamanho: 1,
+        bracos: 1,
+        pernas: 1,
+        tronco: 1,
+        cabeca: 1,
+        altura: 0.0,
+        comprimento_braco: 0.0,
+        comprimento_perna: 0.0,
+        anim: 0,
+        musculatura: 0.5,
+        peso: 0,
+        busto: 0.5,
+        ampulheta: 0,
+        maça: 0,
+        diamante: 0,
+        triangulo: 0,
+        triangulo_invertido: 0,
+        retangulo: 0,
+        coluna: 0,
+        aplicar: () => {
+            this.aplicarAlteracoes();
+            for (let i = 0; i < this.#gui.controllers.length; i++) {
+                if (this.#gui.controllers[i].property != "altura" && this.#gui.controllers[i].property != "comprimento_braco" && this.#gui.controllers[i].property != "comprimento_perna"){
+                    this.#gui.controllers[i].disable();
+                    this.#gui.controllers[i].hide();
+                }
+            }
+        }
+    };
+
+    /** Atualiza a morfologia do modelo */
+    atualizaMorphs = () => {
+        if (this.#malha) {
+            this.#malha.morphTargetInfluences[9] = this.params.coluna;
+            this.#malha.morphTargetInfluences[8] = this.params.retangulo;
+            this.#malha.morphTargetInfluences[7] = this.params.triangulo_invertido;
+            this.#malha.morphTargetInfluences[6] = this.params.triangulo;
+            this.#malha.morphTargetInfluences[5] = this.params.diamante;
+            this.#malha.morphTargetInfluences[4] = this.params.maça;
+            this.#malha.morphTargetInfluences[3] = this.params.ampulheta;
+            this.#malha.morphTargetInfluences[2] = this.params.busto;
+            this.#malha.morphTargetInfluences[1] = this.params.peso;
+            this.#malha.morphTargetInfluences[0] = this.params.musculatura;
+        }
+    };
+
+    constructor(scene, renderer, url) {
+        this.#scene = scene;
+        this.#renderer = renderer;
+        this.#url = url;
     }
 
+    setGui(gui) {
+        this.#gui = gui;
+    }
 
-    carregaModelo(modeloURL) {
+    /** Carrega o arquivo 3D em armazenado em this.url */
+    #carregaModelo() {
         return new Promise((resolve, reject) => {
             const loader = new FBXLoader();
             loader.load(
-                modeloURL,
+                this.#url,
                 (objeto) => {
 
                     objeto.scale.setScalar(0.0011);
@@ -263,36 +290,10 @@ export class ProvadorViewport {
 
                             malha.geometry = BufferGeometryUtils.mergeVertices(malha.geometry);
 
-                            const atualizaMorphs = () => {
-                                if (this.#malha) {
-                                    this.#malha.morphTargetInfluences[9] = this.#params.coluna;
-                                    this.#malha.morphTargetInfluences[8] = this.#params.retangulo;
-                                    this.#malha.morphTargetInfluences[7] = this.#params.triangulo_invertido;
-                                    this.#malha.morphTargetInfluences[6] = this.#params.triangulo;
-                                    this.#malha.morphTargetInfluences[5] = this.#params.diamante;
-                                    this.#malha.morphTargetInfluences[4] = this.#params.maça;
-                                    this.#malha.morphTargetInfluences[3] = this.#params.ampulheta;
-                                    this.#malha.morphTargetInfluences[2] = this.#params.busto;
-                                    this.#malha.morphTargetInfluences[1] = this.#params.peso;
-                                    this.#malha.morphTargetInfluences[0] = this.#params.musculatura;
-                                }
-                            };
-                            
-                            this.#gui.add(this.#params, "musculatura", 0, 1, 0.05).onChange(atualizaMorphs);
-                            this.#gui.add(this.#params, "peso", 0, 1, 0.05).onChange(atualizaMorphs);
-                            this.#gui.add(this.#params, "busto", 0, 1, 0.05).onChange(atualizaMorphs);
-                            this.#gui.add(this.#params, "ampulheta", 0, 1, 0.05).onChange(atualizaMorphs);
-                            this.#gui.add(this.#params, "maça", 0, 1, 0.05).onChange(atualizaMorphs);
-                            this.#gui.add(this.#params, "diamante", 0, 1, 0.05).onChange(atualizaMorphs);
-                            this.#gui.add(this.#params, "triangulo", 0, 1, 0.05).onChange(atualizaMorphs);
-                            this.#gui.add(this.#params, "triangulo_invertido", 0, 1, 0.05).onChange(atualizaMorphs);
-                            this.#gui.add(this.#params, "retangulo", 0, 1, 0.05).onChange(atualizaMorphs);
-                            this.#gui.add(this.#params, "coluna", 0, 1, 0.05).onChange(atualizaMorphs);
-
                             malha.geometry.morphTargetsRelative = true;
                             this.#malha = malha;
 
-                            atualizaMorphs();
+                            this.atualizaMorphs();
                         }
                     });
                     
@@ -311,10 +312,10 @@ export class ProvadorViewport {
         });
     }
     
-
-    async initModelo(modeloURL) {
+    /** Inicializa o modelo 3D */
+    async initModelo() {
         try {
-            this.#model = await this.carregaModelo(modeloURL); // Espera o modelo ser carregado
+            this.#model = await this.#carregaModelo(); // Espera o modelo ser carregado
             console.log("Modelo carregado:", this.#model);
     
             const skeletonHelper = new THREE.SkeletonHelper(this.#model);
@@ -323,44 +324,44 @@ export class ProvadorViewport {
             skeletonHelper.bones.forEach((bone, index) => {
                 console.log(`Bone ${index}: ${bone.name}`);
     
-                if (!this.#ossos.quadril && bone.name.includes("Hips")) this.#ossos.quadril = bone;
+                if (!this.ossos.quadril && bone.name.includes("Hips")) this.ossos.quadril = bone;
     
-                if (!this.#ossos.tronco && bone.name.includes("LowerBack")) this.#ossos.tronco = bone;
+                if (!this.ossos.tronco && bone.name.includes("LowerBack")) this.ossos.tronco = bone;
     
-                if (!this.#ossos.braco_esq && bone.name.includes("LeftArm")) this.#ossos.braco_esq = bone;
+                if (!this.ossos.braco_esq && bone.name.includes("LeftArm")) this.ossos.braco_esq = bone;
     
-                if (!this.#ossos.mao_esq && bone.name.includes("LeftHand")) this.#ossos.mao_esq = bone;
+                if (!this.ossos.mao_esq && bone.name.includes("LeftHand")) this.ossos.mao_esq = bone;
     
-                if (!this.#ossos.ant_braco_esq && bone.name.includes("LeftForeArm")) this.#ossos.ant_braco_esq = bone
+                if (!this.ossos.ant_braco_esq && bone.name.includes("LeftForeArm")) this.ossos.ant_braco_esq = bone
     
-                if (!this.#ossos.braco_dir && bone.name.includes("RightArm")) this.#ossos.braco_dir = bone;
+                if (!this.ossos.braco_dir && bone.name.includes("RightArm")) this.ossos.braco_dir = bone;
     
-                if (!this.#ossos.ant_braco_dir && bone.name.includes("RightForeArm")) this.#ossos.ant_braco_dir = bone;
+                if (!this.ossos.ant_braco_dir && bone.name.includes("RightForeArm")) this.ossos.ant_braco_dir = bone;
     
-                if (!this.#ossos.mao_dir && bone.name.includes("RightHand")) this.#ossos.mao_dir = bone;
+                if (!this.ossos.mao_dir && bone.name.includes("RightHand")) this.ossos.mao_dir = bone;
     
-                if (!this.#ossos.coxa_esq && bone.name.includes("LeftUpLeg")) this.#ossos.coxa_esq = bone;
+                if (!this.ossos.coxa_esq && bone.name.includes("LeftUpLeg")) this.ossos.coxa_esq = bone;
     
-                if (!this.#ossos.pe_esq && bone.name.includes("LeftFoot")) this.#ossos.pe_esq = bone;
+                if (!this.ossos.pe_esq && bone.name.includes("LeftFoot")) this.ossos.pe_esq = bone;
     
-                if (!this.#ossos.coxa_dir && bone.name.includes("RightUpLeg")) this.#ossos.coxa_dir = bone;
+                if (!this.ossos.coxa_dir && bone.name.includes("RightUpLeg")) this.ossos.coxa_dir = bone;
     
-                if (!this.#ossos.pe_dir && bone.name.includes("RightFoot")) this.#ossos.pe_dir = bone;
+                if (!this.ossos.pe_dir && bone.name.includes("RightFoot")) this.ossos.pe_dir = bone;
     
-                if (!this.#ossos.cabeca && bone.name.includes("Head")) this.#ossos.cabeca = bone;
+                if (!this.ossos.cabeca && bone.name.includes("Head")) this.ossos.cabeca = bone;
     
-                if (!this.#ossos.cabeca_topo && bone.name.includes("Head_end")) this.#ossos.cabeca_topo = bone;
+                if (!this.ossos.cabeca_topo && bone.name.includes("Head_end")) this.ossos.cabeca_topo = bone;
             });
             
-            // Controlador de movimento da malha
-            const objectControls = new ObjectControls(this.#ossos.quadril, this.#renderer.domElement);
+            // Controlador de rotação da malha
+            const objectControls = new ObjectControls(this.ossos.quadril, this.#renderer.domElement);
 
         } catch (error) {
             console.error("Erro ao carregar o modelo:", error);
         }
     }
 
-
+    /** Aplica as alterações realizadas na malha e refaz o cálculo do sombreamento */
     aplicarAlteracoes() {
         if (this.#malha) {
             this.#malha.geometry.setAttribute('position', BufferGeometryUtils.computeMorphedAttributes(this.#malha).morphedPositionAttribute);
@@ -370,25 +371,25 @@ export class ProvadorViewport {
         }
     }
 
-
+    /** @returns {Number} Retorna a altura total do modelo */
     getAlturaTotal() {
-        return this.#ossos.cabeca_topo.getWorldPosition(new THREE.Vector3()).y;
+        return this.ossos.cabeca_topo.getWorldPosition(new THREE.Vector3()).y;
     }
     
-    
+    /** @returns {Number} Retorna o comprimento dos braços do modelo */
     getComprimentoBracos() {
-        const braco = this.#ossos.braco_esq.getWorldPosition(new THREE.Vector3());
-        const ant_braco = this.#ossos.ant_braco_esq.getWorldPosition(new THREE.Vector3());
-        const mao = this.#ossos.mao_esq.getWorldPosition(new THREE.Vector3());
+        const braco = this.ossos.braco_esq.getWorldPosition(new THREE.Vector3());
+        const ant_braco = this.ossos.ant_braco_esq.getWorldPosition(new THREE.Vector3());
+        const mao = this.ossos.mao_esq.getWorldPosition(new THREE.Vector3());
         return braco.distanceTo(ant_braco) + ant_braco.distanceTo(mao);
     }
     
-    
+    /** @returns {Number} Retorna a o comprimento das pernas do modelo */
     getComprimentoPernas() {
-        return this.#ossos.quadril.getWorldPosition(new THREE.Vector3()).y;
+        return this.ossos.quadril.getWorldPosition(new THREE.Vector3()).y;
     }
     
-    
+    /** Reseta as alterações de escala realizadas no modelo */
     resetarEscalas() {
         this.escalarTamanho(1, false);
         this.escalarBracos(1);
@@ -397,47 +398,65 @@ export class ProvadorViewport {
         this.escalarCabeca(1);
     }
     
-    
-    escalarTamanho(value, mover = true) {
-        this.escalarOsso(this.#ossos.quadril, new THREE.Vector3(value, value, value));
-        if (mover) this.#model.position.y = 0 + (value - 1) + (this.#params.pernas - 1);
+    /** Realiza a escala em todos os ossos do modelo
+     * @param {Number} valor - Valor de escala
+     * @param {Boolean} mover - Decide se o modelo deve ser reposicionado ao escalar
+     */
+    escalarTamanho(valor, mover = true) {
+        this.escalarOsso(this.ossos.quadril, new THREE.Vector3(valor, valor, valor));
+        if (mover) this.#model.position.y = 0 + (valor - 1) + (this.params.pernas - 1);
     }
     
-    
-    escalarCabeca(value) {
-        this.escalarOssoI(this.#ossos.cabeca, new THREE.Vector3(value, value, value));
+    /** Realiza a escala do tamanho da cabeça do modelo
+     * @param {Number} valor - Valor de escala
+     */
+    escalarCabeca(valor) {
+        this.escalarOssoI(this.ossos.cabeca, new THREE.Vector3(valor, valor, valor));
     }
     
-    
-    escalarTronco(value) {
-        this.escalarOssoI(this.#ossos.tronco, new THREE.Vector3(1, value, 1));
+    /** Realiza a escala do comprimento do tronco do modelo
+     * @param {Number} valor - Valor de escala
+     */
+    escalarTronco(valor) {
+        this.escalarOssoI(this.ossos.tronco, new THREE.Vector3(1, valor, 1));
     }
     
-    
-    escalarBracos(value) {
-        this.escalarOsso(this.#ossos.braco_esq, new THREE.Vector3(1, value, 1));
-        this.escalarOsso(this.#ossos.braco_dir, new THREE.Vector3(1, value, 1));
+    /** Realiza a escala do comprimento dos braços do modelo
+     * @param {Number} valor - Valor de escala
+     */
+    escalarBracos(valor) {
+        this.escalarOsso(this.ossos.braco_esq, new THREE.Vector3(1, valor, 1));
+        this.escalarOsso(this.ossos.braco_dir, new THREE.Vector3(1, valor, 1));
     }
     
-    
-    escalarPernas(value, mover = true) {
-        this.escalarOsso(this.#ossos.coxa_esq, new THREE.Vector3(1, value, 1));
-        this.escalarOsso(this.#ossos.coxa_dir, new THREE.Vector3(1, value, 1));
-        if (mover) this.#model.position.y = 0 + (value - 1) + (this.#params.tamanho - 1);
+    /** Realiza a escala do comprimento das pernas do modelo
+     * @param {Number} valor - Valor de escala
+     * @param {Boolean} mover - Decide se o modelo deve ser reposicionado ao escalar
+     */
+    escalarPernas(valor, mover = true) {
+        this.escalarOsso(this.ossos.coxa_esq, new THREE.Vector3(1, valor, 1));
+        this.escalarOsso(this.ossos.coxa_dir, new THREE.Vector3(1, valor, 1));
+        if (mover) this.#model.position.y = 0 + (valor - 1) + (this.params.tamanho - 1);
     }
     
-    
-    escalarOsso(osso, vecEscala) {
-        osso.scale.set(1 * vecEscala.x, 1 * vecEscala.y, 1 * vecEscala.z);
+    /** Realiza a escala do tamanho de um osso do modelo, juntamente com todos os seus filhos
+     * @param {THREE.Object3D} osso - Object3D do osso a ser escalado
+     * @param {Number} valor - Valor de escala
+     */
+    escalarOsso(osso, valor) {
+        osso.scale.set(1 * valor.x, 1 * valor.y, 1 * valor.z);
         osso.updateMatrixWorld(true);
     }
     
-    
-    escalarOssoI(osso, vecEscala) {
+    /** Realiza a escala do tamanho de um osso individual do modelo
+     * @param {THREE.Object3D} osso - Object3D do osso a ser escalado
+     * @param {Number} valor - Valor de escala
+     */
+    escalarOssoI(osso, valor) {
         osso.children.forEach((child, index) => {
-            child.scale.set(1 / vecEscala.x, 1 / vecEscala.y, 1 / vecEscala.z);
+            child.scale.set(1 / valor.x, 1 / valor.y, 1 / valor.z);
         });
-        osso.scale.set(vecEscala.x, vecEscala.y, vecEscala.z);
+        osso.scale.set(valor.x, valor.y, valor.z);
         osso.updateMatrixWorld(true);
     }
 }
