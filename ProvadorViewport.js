@@ -28,7 +28,7 @@ export class ProvadorViewport {
     #renderer = new THREE.WebGLRenderer({ antialias: true });
     
     /** Instância do modelo de manequim */
-    #modelo = new Modelo(this.#scene, this.#renderer, "models/f_padrao.fbx");
+    #modelo = new Modelo(this.#scene, this.#renderer, "models/f_padrao2.fbx");
     
     constructor(containerId) {
 
@@ -78,8 +78,14 @@ export class ProvadorViewport {
 
         
         // Inicializando o modelo
-        this.#modelo.initModelo();
+        this.#modelo.initModelo().then(() => {
+            this.carregaModelo("models/camiseta.fbx").then((roupa) => {
+                this.#modelo.ossos.quadril.attach(roupa);
+            });
+        });
 
+
+        
 
         // Loop de renderização
         let lastFrameTime = Date.now(); // Tempo do último frame
@@ -135,6 +141,46 @@ export class ProvadorViewport {
 
         this.#container.appendChild(this.#renderer.domElement);
 
+    }
+
+
+    /** Carrega o arquivo 3D em armazenado em url 
+     * @returns {Promise} Retorna uma promessa que resolve o objeto 3D do modelo carregado
+    */
+    carregaModelo(url) {
+        return new Promise((resolve, reject) => {
+            const loader = new FBXLoader();
+            loader.load(
+                url,
+                (objeto) => {
+
+                    objeto.scale.setScalar(1/100);
+
+                    objeto.traverse((malha) => {
+                        if (malha.isMesh) {
+
+                            malha.geometry = BufferGeometryUtils.mergeVertices(malha.geometry);
+
+                            malha.geometry.morphTargetsRelative = true;
+
+                            malha.morphTargetInfluences[1] = 1;
+                        }
+                    });
+                    
+                    objeto.name = "roupa";
+
+                    this.#scene.add(objeto);
+
+                    console.log("Modelo carregado:", objeto);
+                    resolve(objeto);
+                },
+                undefined,
+                function (error) {
+                    console.error("Erro ao carregar o modelo:", error);
+                    reject(error); // Rejeita a promessa se houver um erro ao carregar o modelo
+                }
+            );
+        });
     }
 
 
@@ -275,7 +321,9 @@ class Modelo {
         this.#gui = gui;
     }
 
-    /** Carrega o arquivo 3D em armazenado em this.url */
+    /** Carrega o arquivo 3D em armazenado em this.url 
+     * @returns {Promise} Retorna uma promessa que resolve o objeto 3D do modelo carregado
+    */
     #carregaModelo() {
         return new Promise((resolve, reject) => {
             const loader = new FBXLoader();
@@ -283,7 +331,7 @@ class Modelo {
                 this.#url,
                 (objeto) => {
 
-                    objeto.scale.setScalar(0.0011);
+                    objeto.scale.setScalar(1/100);
 
                     objeto.traverse((malha) => {
                         if (malha.isMesh) {

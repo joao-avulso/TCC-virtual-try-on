@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 export class ObjectControls {
-    constructor(object, domElement) {
+    constructor(object, domElement, rotationVector) {
         this.object = object;
         this.domElement = domElement || document;
+        this.rotationVector = rotationVector || new THREE.Vector3(0, 0, 1);
 
         this.enabled = true;
         this.rotationSpeed = 0.01;
@@ -41,6 +42,6 @@ export class ObjectControls {
     }
 
     rotate() {
-        this.object.rotateOnWorldAxis(new THREE.Vector3(0, 0, 1), (this.mouseEnd.x - this.mouseStart.x) * this.rotationSpeed);
+        this.object.rotateOnWorldAxis(this.rotationVector, (this.mouseEnd.x - this.mouseStart.x) * this.rotationSpeed);
     }
 }
