@@ -137,52 +137,17 @@ export class ProvadorViewport {
         this.#container.appendChild(this.#renderer.domElement);
     }
 
-    /** Carrega o arquivo 3D em armazenado em url
-     * @returns {Promise} Retorna uma promessa que resolve o objeto 3D do modelo carregado
-     */
-    carregaModelo(url) {
-        return new Promise((resolve, reject) => {
-            const loader = new FBXLoader();
-            loader.load(
-                url,
-                (objeto) => {
-                    objeto.scale.setScalar(1 / 100);
-
-                    objeto.traverse((malha) => {
-                        if (malha.isMesh) {
-                            malha.geometry = BufferGeometryUtils.mergeVertices(malha.geometry);
-                            malha.geometry.morphTargetsRelative = true;
-                            malha.morphTargetInfluences[0] = 1;
-                        }
-                    });
-
-                    objeto.name = "roupa";
-
-                    this.#scene.add(objeto);
-
-                    console.log("Modelo carregado:", objeto);
-                    resolve(objeto);
-                },
-                undefined,
-                function (error) {
-                    console.error("Erro ao carregar o modelo:", error);
-                    reject(error); // Rejeita a promessa se houver um erro ao carregar o modelo
-                }
-            );
-        });
-    }
-
     /** Inicializa uma interface gráfica simples para customização do manequim */
     initGUI() {
         const gui = new GUI({ title: "Customização de manequim", width: 400 });
 
         this.#modelo.setGui(gui);
-        
+
         gui.add(this.#modelo.params, "cintura", 0, 2, 1).onChange((value) => {
             this.#modelo.setCintura(value);
         });
 
-        gui.add(this.#modelo.params, "busto", (1/4), 1, (1/4)).onChange(() => {
+        gui.add(this.#modelo.params, "busto", 1 / 4, 1, 1 / 4).onChange(() => {
             this.#modelo.atualizaMorphs();
             this.#modelo.updateCircunferencias();
         });
@@ -190,7 +155,7 @@ export class ProvadorViewport {
         gui.add(this.#modelo.params, "tipo_corpo", 0, 2, 1).onChange((value) => {
             this.#modelo.setTipoCorpo(value);
         });
-        
+
         // gui.add(this.#modelo.params, "tamanho", 0.85, 1.15, 0.01).onChange((value) => {
         //     this.#modelo.escalarTamanho(value);
         // });
@@ -291,6 +256,7 @@ class Modelo {
                     this.#gui.controllers[i].hide();
                 }
             }
+            const roupa = new Roupa(this.#scene, this.#renderer, "models/camiseta.fbx", this);
         },
     };
 
@@ -310,7 +276,7 @@ class Modelo {
         }
     };
 
-    constructor(scene, renderer, url) {
+    constructor(scene = null, renderer = null, url = null) {
         this.#scene = scene;
         this.#renderer = renderer;
         this.#url = url;
@@ -400,13 +366,19 @@ class Modelo {
 
             // Achar os vértices do busto e quadril
             const positions = BufferGeometryUtils.computeMorphedAttributes(this.#malha).morphedPositionAttribute.array;
-            this.#vertsBusto = VertexUtils.sortVerticesByAngle(VertexUtils.filterVerticesByHeight(positions, 9.3, 9.33, -1.2, 1.2));
-            this.#vertsCintura = VertexUtils.sortVerticesByAngle(VertexUtils.filterVerticesByHeight(positions, 8.0, 8.03, -2.2, 2.2));
-            this.#vertsQuadril = VertexUtils.sortVerticesByAngle(VertexUtils.filterVerticesByHeight(positions, 6.5, 6.555, -4.2, 4.2));
+            this.#vertsBusto = VertexUtils.sortVerticesByAngle(
+                VertexUtils.filterVerticesByHeight(positions, 9.3, 9.33, -1.2, 1.2)
+            );
+            this.#vertsCintura = VertexUtils.sortVerticesByAngle(
+                VertexUtils.filterVerticesByHeight(positions, 8.0, 8.03, -2.2, 2.2)
+            );
+            this.#vertsQuadril = VertexUtils.sortVerticesByAngle(
+                VertexUtils.filterVerticesByHeight(positions, 6.5, 6.555, -4.2, 4.2)
+            );
             this.updateCircunferencias();
 
             // Controlador de rotação da malha
-            const objectControls = new ObjectControls(this.ossos.quadril, this.#renderer.domElement);
+            this.objectControls = new ObjectControls(this.ossos.quadril, this.#renderer.domElement);
         } catch (error) {
             console.error("Erro ao carregar o modelo:", error);
         }
@@ -415,6 +387,7 @@ class Modelo {
     /** Aplica as alterações realizadas na malha e refaz o cálculo do sombreamento */
     aplicarAlteracoes() {
         if (this.#malha) {
+            this.objectControls.resetRotation();
             this.#malha.geometry.setAttribute(
                 "position",
                 BufferGeometryUtils.computeMorphedAttributes(this.#malha).morphedPositionAttribute
@@ -432,9 +405,9 @@ class Modelo {
             this.#vertsBusto = VertexUtils.getVertexFromIndex(this.#vertsBusto, positions);
             this.#vertsQuadril = VertexUtils.getVertexFromIndex(this.#vertsQuadril, positions);
             this.#vertsCintura = VertexUtils.getVertexFromIndex(this.#vertsCintura, positions);
-            this.params.circ_busto = VertexUtils.calculateCircumference(this.#malha, this.#vertsBusto)*100;
-            this.params.circ_quadril = VertexUtils.calculateCircumference(this.#malha, this.#vertsQuadril)*100;
-            this.params.circ_cintura = VertexUtils.calculateCircumference(this.#malha, this.#vertsCintura)*100;
+            this.params.circ_busto = VertexUtils.calculateCircumference(this.#malha, this.#vertsBusto) * 100;
+            this.params.circ_quadril = VertexUtils.calculateCircumference(this.#malha, this.#vertsQuadril) * 100;
+            this.params.circ_cintura = VertexUtils.calculateCircumference(this.#malha, this.#vertsCintura) * 100;
         }
     }
 
@@ -472,7 +445,7 @@ class Modelo {
         this.params.retangulo = 0;
     }
 
-    /** Define a opção de cintura do modelo 
+    /** Define a opção de cintura do modelo
      * @param {Number} selecao - Valor de seleção, 0 para cintura fina, 1 para cintura média e 2 para cintura larga
      */
     setCintura(selecao) {
@@ -488,18 +461,18 @@ class Modelo {
         this.updateCircunferencias();
     }
 
-    /** Define o tipo de corpo do modelo 
-     * @param {Number} selecao - Valor de seleção, 0 para retângulo, 1 para triângulo invertido e 2 para ampulheta
+    /** Define o tipo de corpo do modelo
+     * @param {Number} selecao - Valor de seleção, 0 para ampulheta, 1 para triângulo invertido e 2 para retângulo
      */
     setTipoCorpo(selecao) {
         this.resetarTipoCorpo();
 
         if (selecao == 0) {
-            this.params.retangulo = 0.5;
+            this.params.ampulheta = 0.5;
         } else if (selecao == 1) {
             this.params.triangulo_invertido = 0.5;
         } else {
-            this.params.ampulheta = 0.5;
+            this.params.retangulo = 0.5;
         }
 
         this.atualizaMorphs();
@@ -566,5 +539,163 @@ class Modelo {
         });
         osso.scale.set(valor.x, valor.y, valor.z);
         osso.updateMatrixWorld(true);
+    }
+}
+
+class Roupa {
+    /** Instância da cena 3D */
+    #scene;
+
+    /** Instância da interface gráfica */
+    #gui;
+
+    /** Instância do renderizador */
+    #renderer;
+
+    /** URL do arquivo do modelo 3D */
+    #url = new String();
+
+    /** Objeto 3D do modelo */
+    #model = new THREE.Object3D();
+
+    /** Malha 3D do modelo */
+    #malha = new THREE.Mesh();
+
+    /** Instância do manequim */
+    #modelo = new Modelo();
+
+    /** Morphs do modelo */
+    #morphs = {
+        busto: 0,
+        tipo_corpo: 0,
+        cintura: 0,
+        tamanho: 0,
+    };
+
+    constructor(scene, renderer, url, modelo) {
+        this.#scene = scene;
+        this.#renderer = renderer;
+        this.#url = url;
+        this.#modelo = modelo;
+
+        this.#morphs.busto = this.#modelo.params.busto * 4 - 1;
+        console.log(this.#morphs.busto);
+        this.#morphs.tipo_corpo = this.#modelo.params.tipo_corpo;
+        this.#morphs.cintura = this.#modelo.params.cintura;
+
+        this.initRoupa();
+    }
+
+    setGui(gui) {
+        this.#gui = gui;
+    }
+
+    /** Carrega o arquivo 3D armazenado em url
+     * @returns {Promise} Retorna uma promessa que resolve o objeto 3D do modelo carregado
+     */
+    #carregaModelo() {
+        return new Promise((resolve, reject) => {
+            const loader = new FBXLoader();
+            loader.load(
+                this.#url,
+                (objeto) => {
+                    objeto.scale.setScalar(1 / 100);
+
+                    objeto.traverse((malha) => {
+                        if (malha.isMesh) {
+                            malha.geometry = BufferGeometryUtils.mergeVertices(malha.geometry);
+                            malha.geometry.morphTargetsRelative = true;
+                            this.#malha = malha;
+                        }
+                    });
+
+                    objeto.name = "roupa";
+
+                    this.#scene.add(objeto);
+
+                    console.log("Modelo carregado:", objeto);
+                    resolve(objeto);
+                },
+                undefined,
+                function (error) {
+                    console.error("Erro ao carregar o modelo:", error);
+                    reject(error); // Rejeita a promessa se houver um erro ao carregar o modelo
+                }
+            );
+        });
+    }
+
+    /** Inicializa o modelo 3D da peça de roupa*/
+    async initRoupa() {
+        try {
+            this.#model = await this.#carregaModelo(); // Espera o modelo ser carregado
+
+            this.#modelo.ossos.quadril.attach(this.#model); // Anexa a roupa ao manequim
+
+            this.#morphs.tamanho = 1;
+
+            this.#malha.morphTargetInfluences[
+                this.#getIndiceMorph(
+                    this.#morphs.busto,
+                    this.#morphs.tipo_corpo,
+                    this.#morphs.cintura,
+                    this.#morphs.tamanho,
+                    [2, 2, 1]
+                )
+            ] = 1;
+
+            this.aplicarAlteracoes();
+
+            //
+        } catch (error) {
+            console.error("Erro ao carregar o modelo:", error);
+        }
+    }
+
+    /** Aplica as alterações realizadas na malha e refaz o cálculo do sombreamento */
+    aplicarAlteracoes() {
+        if (this.#malha) {
+            this.#malha.geometry.setAttribute(
+                "position",
+                BufferGeometryUtils.computeMorphedAttributes(this.#malha).morphedPositionAttribute
+            );
+            this.#malha.updateMorphTargets();
+            // this.resetarEscalas();
+            this.#malha.geometry.computeVertexNormals();
+        }
+    }
+
+    /** Função para converter índices de um array 4D em um índice 1D, levando em conta dim4 variável */
+    #getIndiceMorph(i, j, k, l, dim4_sizes) {
+        let index1D = 0;
+
+        // Primeiro, acumule os saltos das camadas anteriores (i, j)
+        // Vamos supor que as dimensões anteriores (i, j) sejam fixas com 4 e 3
+        for (let ii = 0; ii < i; ii++) {
+            for (let jj = 0; jj < 3; jj++) {
+                // Assumindo que a segunda dimensão (j) tem sempre tamanho 3
+                for (let kk = 0; kk < 3; kk++) {
+                    // Assumindo que a terceira dimensão (k) tem sempre tamanho 3
+                    index1D += dim4_sizes[kk]; // Acumular o salto de acordo com k
+                }
+            }
+        }
+
+        // Acumular o salto das camadas anteriores de j para o i atual
+        for (let jj = 0; jj < j; jj++) {
+            for (let kk = 0; kk < 3; kk++) {
+                index1D += dim4_sizes[kk]; // Acumular o salto de acordo com k
+            }
+        }
+
+        // Acumular o salto das camadas anteriores de k para os valores de i e j atuais
+        for (let kk = 0; kk < k; kk++) {
+            index1D += dim4_sizes[kk]; // Acumular o salto de acordo com k
+        }
+
+        // Finalmente, adicionar o índice da quarta dimensão (l) considerando o valor de k
+        index1D += l;
+
+        return index1D;
     }
 }

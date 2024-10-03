@@ -1,26 +1,28 @@
-import * as THREE from 'three';
+import * as THREE from "three";
 export class ObjectControls {
     constructor(object, domElement, rotationVector) {
         this.object = object;
         this.domElement = domElement || document;
         this.rotationVector = rotationVector || new THREE.Vector3(0, 0, 1);
+        this.originRotation = this.object.rotation.clone();
 
         this.enabled = true;
         this.rotationSpeed = 0.01;
 
-        this.state = 'none';
+        this.state = "none";
 
         this.mouseStart = new THREE.Vector2();
         this.mouseEnd = new THREE.Vector2();
 
-        this.domElement.addEventListener('mousedown', this.onMouseDown.bind(this), false);
-        this.domElement.addEventListener('mousemove', this.onMouseMove.bind(this), false);
-        this.domElement.addEventListener('mouseup', this.onMouseUp.bind(this), false);
+        this.domElement.addEventListener("mousedown", this.onMouseDown.bind(this), false);
+        this.domElement.addEventListener("mousemove", this.onMouseMove.bind(this), false);
+        this.domElement.addEventListener("mouseup", this.onMouseUp.bind(this), false);
     }
 
     onMouseDown(event) {
-        if (event.button === 0) { // Left mouse button
-            this.state = 'rotate';
+        if (event.button === 0) {
+            // Left mouse button
+            this.state = "rotate";
             this.mouseStart.set(event.clientX, event.clientY);
         }
     }
@@ -30,7 +32,7 @@ export class ObjectControls {
 
         this.mouseEnd.set(event.clientX, event.clientY);
 
-        if (this.state === 'rotate') {
+        if (this.state === "rotate") {
             this.rotate();
         }
 
@@ -38,10 +40,14 @@ export class ObjectControls {
     }
 
     onMouseUp() {
-        this.state = 'none';
+        this.state = "none";
     }
 
     rotate() {
         this.object.rotateOnWorldAxis(this.rotationVector, (this.mouseEnd.x - this.mouseStart.x) * this.rotationSpeed);
+    }
+
+    resetRotation() {
+        this.object.rotation.copy(this.originRotation);
     }
 }
