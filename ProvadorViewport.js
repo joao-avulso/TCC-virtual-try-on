@@ -4,6 +4,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { ObjectControls } from "./ObjectControls.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader";
 import * as BufferGeometryUtils from "three/addons/utils/BufferGeometryUtils.js";
+import * as VertexUtils from "./vertexUtils.js";
 
 /**
  * Instancia um novo viewport do provador virtual no elemento definido por containerId.
@@ -176,46 +177,39 @@ export class ProvadorViewport {
         const gui = new GUI({ title: "Customização de manequim", width: 400 });
 
         this.#modelo.setGui(gui);
-
-        const alturaController = gui.add(this.#modelo.params, "altura").decimals(2).listen();
-        alturaController.domElement.querySelector("input").disabled = true;
-
-        const comprimentoBracosController = gui.add(this.#modelo.params, "comprimento_braco").decimals(2).listen();
-        comprimentoBracosController.domElement.querySelector("input").disabled = true;
-
-        const comprimentoPernasController = gui.add(this.#modelo.params, "comprimento_perna").decimals(2).listen();
-        comprimentoPernasController.domElement.querySelector("input").disabled = true;
-
-        gui.add(this.#modelo.params, "tamanho", 0.85, 1.15, 0.01).onChange((value) => {
-            this.#modelo.escalarTamanho(value);
+        
+        gui.add(this.#modelo.params, "cintura", 0, 2, 1).onChange((value) => {
+            this.#modelo.setCintura(value);
         });
 
-        gui.add(this.#modelo.params, "bracos", 0.85, 1.15, 0.01).onChange((value) => {
-            this.#modelo.escalarBracos(value);
+        gui.add(this.#modelo.params, "busto", (1/4), 1, (1/4)).onChange(() => {
+            this.#modelo.atualizaMorphs();
+            this.#modelo.updateCircunferencias();
         });
+
+        gui.add(this.#modelo.params, "tipo_corpo", 0, 2, 1).onChange((value) => {
+            this.#modelo.setTipoCorpo(value);
+        });
+        
+        // gui.add(this.#modelo.params, "tamanho", 0.85, 1.15, 0.01).onChange((value) => {
+        //     this.#modelo.escalarTamanho(value);
+        // });
 
         gui.add(this.#modelo.params, "pernas", 0.75, 1.25, 0.01).onChange((value) => {
             this.#modelo.escalarPernas(value);
         });
 
-        gui.add(this.#modelo.params, "tronco", 0.85, 1.15, 0.01).onChange((value) => {
-            this.#modelo.escalarTronco(value);
-        });
+        const alturaController = gui.add(this.#modelo.params, "altura").decimals(2).listen();
+        alturaController.domElement.querySelector("input").disabled = true;
 
-        gui.add(this.#modelo.params, "cabeca", 0.9, 1.1, 0.01).onChange((value) => {
-            this.#modelo.escalarCabeca(value);
-        });
+        const bustoController = gui.add(this.#modelo.params, "circ_busto").decimals(0).listen();
+        bustoController.domElement.querySelector("input").disabled = true;
 
-        gui.add(this.#modelo.params, "musculatura", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
-        gui.add(this.#modelo.params, "peso", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
-        gui.add(this.#modelo.params, "busto", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
-        gui.add(this.#modelo.params, "ampulheta", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
-        gui.add(this.#modelo.params, "maça", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
-        gui.add(this.#modelo.params, "diamante", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
-        gui.add(this.#modelo.params, "triangulo", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
-        gui.add(this.#modelo.params, "triangulo_invertido", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
-        gui.add(this.#modelo.params, "retangulo", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
-        gui.add(this.#modelo.params, "coluna", 0, 1, 0.05).onChange(this.#modelo.atualizaMorphs);
+        const cinturaController = gui.add(this.#modelo.params, "circ_cintura").decimals(0).listen();
+        cinturaController.domElement.querySelector("input").disabled = true;
+
+        const quadrilController = gui.add(this.#modelo.params, "circ_quadril").decimals(0).listen();
+        quadrilController.domElement.querySelector("input").disabled = true;
 
         gui.add(this.#modelo.params, "aplicar");
     }
@@ -246,6 +240,15 @@ class Modelo {
     /** Malha 3D do modelo */
     #malha = new THREE.Mesh();
 
+    /** Vértices do busto do modelo */
+    #vertsBusto = [];
+
+    /** Vértices da cintura do modelo */
+    #vertsCintura = [];
+
+    /** Vértices do quadril do modelo */
+    #vertsQuadril = [];
+
     /** Objeto contendo os ossos do modelo */
     ossos = new Object();
 
@@ -257,10 +260,15 @@ class Modelo {
         tronco: 1,
         cabeca: 1,
         altura: 0.0,
+        circ_busto: 0.0,
+        circ_cintura: 0.0,
+        circ_quadril: 0.0,
         comprimento_braco: 0.0,
         comprimento_perna: 0.0,
         anim: 0,
         musculatura: 0.5,
+        cintura: 0,
+        tipo_corpo: 0,
         peso: 0,
         busto: 0.25,
         ampulheta: 0,
@@ -275,8 +283,9 @@ class Modelo {
             for (let i = 0; i < this.#gui.controllers.length; i++) {
                 if (
                     this.#gui.controllers[i].property != "altura" &&
-                    this.#gui.controllers[i].property != "comprimento_braco" &&
-                    this.#gui.controllers[i].property != "comprimento_perna"
+                    this.#gui.controllers[i].property != "circ_busto" &&
+                    this.#gui.controllers[i].property != "circ_quadril" &&
+                    this.#gui.controllers[i].property != "circ_cintura"
                 ) {
                     this.#gui.controllers[i].disable();
                     this.#gui.controllers[i].hide();
@@ -389,6 +398,13 @@ class Modelo {
                 if (!this.ossos.cabeca_topo && bone.name.includes("Head_end")) this.ossos.cabeca_topo = bone;
             });
 
+            // Achar os vértices do busto e quadril
+            const positions = BufferGeometryUtils.computeMorphedAttributes(this.#malha).morphedPositionAttribute.array;
+            this.#vertsBusto = VertexUtils.sortVerticesByAngle(VertexUtils.filterVerticesByHeight(positions, 9.3, 9.33, -1.2, 1.2));
+            this.#vertsCintura = VertexUtils.sortVerticesByAngle(VertexUtils.filterVerticesByHeight(positions, 8.0, 8.03, -2.2, 2.2));
+            this.#vertsQuadril = VertexUtils.sortVerticesByAngle(VertexUtils.filterVerticesByHeight(positions, 6.5, 6.555, -4.2, 4.2));
+            this.updateCircunferencias();
+
             // Controlador de rotação da malha
             const objectControls = new ObjectControls(this.ossos.quadril, this.#renderer.domElement);
         } catch (error) {
@@ -406,6 +422,19 @@ class Modelo {
             this.#malha.updateMorphTargets();
             this.resetarEscalas();
             this.#malha.geometry.computeVertexNormals();
+        }
+    }
+
+    /** Calcula as circunferências do busto, cintura e quadril do modelo */
+    updateCircunferencias() {
+        if (this.#vertsBusto.length > 0 && this.#vertsQuadril.length > 0) {
+            const positions = BufferGeometryUtils.computeMorphedAttributes(this.#malha).morphedPositionAttribute.array;
+            this.#vertsBusto = VertexUtils.getVertexFromIndex(this.#vertsBusto, positions);
+            this.#vertsQuadril = VertexUtils.getVertexFromIndex(this.#vertsQuadril, positions);
+            this.#vertsCintura = VertexUtils.getVertexFromIndex(this.#vertsCintura, positions);
+            this.params.circ_busto = VertexUtils.calculateCircumference(this.#malha, this.#vertsBusto)*100;
+            this.params.circ_quadril = VertexUtils.calculateCircumference(this.#malha, this.#vertsQuadril)*100;
+            this.params.circ_cintura = VertexUtils.calculateCircumference(this.#malha, this.#vertsCintura)*100;
         }
     }
 
@@ -434,6 +463,47 @@ class Modelo {
         this.escalarPernas(1, false);
         this.escalarTronco(1);
         this.escalarCabeca(1);
+    }
+
+    /** Reseta o tipo de corpo do modelo */
+    resetarTipoCorpo() {
+        this.params.ampulheta = 0;
+        this.params.triangulo_invertido = 0;
+        this.params.retangulo = 0;
+    }
+
+    /** Define a opção de cintura do modelo 
+     * @param {Number} selecao - Valor de seleção, 0 para cintura fina, 1 para cintura média e 2 para cintura larga
+     */
+    setCintura(selecao) {
+        if (selecao == 0) {
+            this.params.peso = 0;
+        } else if (selecao == 1) {
+            this.params.peso = 0.666666;
+        } else {
+            this.params.peso = 1;
+        }
+
+        this.atualizaMorphs();
+        this.updateCircunferencias();
+    }
+
+    /** Define o tipo de corpo do modelo 
+     * @param {Number} selecao - Valor de seleção, 0 para retângulo, 1 para triângulo invertido e 2 para ampulheta
+     */
+    setTipoCorpo(selecao) {
+        this.resetarTipoCorpo();
+
+        if (selecao == 0) {
+            this.params.retangulo = 0.5;
+        } else if (selecao == 1) {
+            this.params.triangulo_invertido = 0.5;
+        } else {
+            this.params.ampulheta = 0.5;
+        }
+
+        this.atualizaMorphs();
+        this.updateCircunferencias();
     }
 
     /** Realiza a escala em todos os ossos do modelo
