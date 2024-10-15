@@ -1,0 +1,6 @@
+{
+    "nome": "Camiseta Regata",
+    "descricao": "Camiseta regata com logo da UEM",
+    "tipo": "cima",
+    "tamanhos": ["P", "M", "G", "GG"]
+}

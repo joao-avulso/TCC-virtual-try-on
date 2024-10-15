@@ -4,7 +4,7 @@ export class ObjectControls {
         this.object = object;
         this.domElement = domElement || document;
         this.rotationVector = rotationVector || new THREE.Vector3(0, 0, 1);
-        this.originRotation = this.object.rotation.clone();
+        this.originQuaternion = this.object.quaternion.clone();
 
         this.enabled = true;
         this.rotationSpeed = 0.01;
@@ -48,6 +48,8 @@ export class ObjectControls {
     }
 
     resetRotation() {
-        this.object.rotation.copy(this.originRotation);
+        if (this.state != "rotate") {
+            this.object.quaternion.rotateTowards(this.originQuaternion, 0.2);
+        }
     }
 }
