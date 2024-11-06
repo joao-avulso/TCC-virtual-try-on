@@ -1,9 +1,13 @@
 {
-  "dependencies": {
-    "three": "^0.165.0",
-    "threejs-object-controls": "^1.2.8"
-  },
-  "devDependencies": {
-    "vite": "^5.3.0"
-  }
+    "dependencies": {
+        "three": "^0.165.0",
+        "threejs-object-controls": "^1.2.8"
+    },
+    "devDependencies": {
+        "vite": "^5.3.0"
+    },
+    "scripts": {
+        "dev": "vite --host",
+        "prod": "vite build"
+    }
 }
