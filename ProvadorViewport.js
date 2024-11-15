@@ -3,13 +3,14 @@ import { GUI } from "three/addons/libs/lil-gui.module.min.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { ObjectControls } from "./ObjectControls.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader";
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as BufferGeometryUtils from "three/addons/utils/BufferGeometryUtils.js";
-import * as VertexUtils from "./ObjectUtils.js";
+import * as ObjectUtils from "./ObjectUtils.js";
 
 /**
  * Instancia um novo viewport do provador virtual no elemento definido por containerId.
  * @param {String} containerId - Id do elemento html que conterá o viewport
+ * @param {Boolean} autoLoad - Define se o modelo deve ser carregado automaticamente
  * @example
  * const Provador = new ProvadorViewport("container");
  */
@@ -30,9 +31,9 @@ export class ProvadorViewport {
     #renderer = new THREE.WebGLRenderer({ antialias: true });
 
     /** Instância do modelo de manequim */
-    #modelo = new Modelo(this, this.#scene, this.#renderer, "models/f_padrao2.fbx");
+    modelo = new Modelo(this, this.#scene, this.#renderer, "models/f_padrao.fbx");
 
-    constructor(containerId) {
+    constructor(containerId, autoLoad = true) {
         // Obter o elemento html que conterá o viewport
         this.#container = document.getElementById(containerId);
 
@@ -41,8 +42,9 @@ export class ProvadorViewport {
 
         // Inicialização da câmera
         const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 100);
-        camera.position.z = 3;
+        camera.position.z = 2.5;
         camera.position.y = 1;
+        camera.position.x = 2;
 
         // Iluminação da cena
         const ambientLight = new THREE.AmbientLight(0xffffff, 3.5);
@@ -77,11 +79,7 @@ export class ProvadorViewport {
         this.#scene.add(pointLight4);
 
         // Inicializando o modelo
-        this.#modelo.initModelo().then(() => {
-            // this.carregaModelo("models/camiseta.fbx").then((roupa) => {
-            //     this.#modelo.ossos.quadril.attach(roupa);
-            // });
-        });
+        if (autoLoad) this.modelo.initModelo();
 
         // Loop de renderização
         let lastFrameTime = Date.now(); // Tempo do último frame
@@ -95,19 +93,12 @@ export class ProvadorViewport {
             if (elapsed > this.#fpsInterval) {
                 lastFrameTime = now - (elapsed % this.#fpsInterval); // Ajustar o tempo para o tempo restante
 
-                // Atualizar informações de altura e comprimento dos membros
-                if (this.#modelo.ossos.cabeca_topo) this.#modelo.params.altura = this.#modelo.getAlturaTotal();
-
-                if (this.#modelo.ossos.braco_esq)
-                    this.#modelo.params.comprimento_braco = this.#modelo.getComprimentoBracos();
-
-                if (this.#modelo.ossos.coxa_esq)
-                    this.#modelo.params.comprimento_perna = this.#modelo.getComprimentoPernas();
+                // Atualizar informações de altura
+                if (this.modelo.ossos.cabeca_topo) this.modelo.params.altura_m = this.modelo.getAlturaTotal();
 
                 // Resetar a rotação do modelo
-                if (this.#modelo.objectControls)
-                    this.#modelo.objectControls.resetRotation();
-    
+                if (this.modelo.objectControls) this.modelo.objectControls.resetRotation();
+
                 this.#renderer.render(this.#scene, camera);
             }
         });
@@ -128,7 +119,6 @@ export class ProvadorViewport {
 
     /** Inicializa uma interface gráfica simples para customização do manequim */
     initGUI() {
-
         // ----------------------------------- Janela de customização ----------------------------------- //
         this.gui = new GUI({ title: "Manequim", width: 400 });
         this.gui.domElement.style.right = "25px";
@@ -136,118 +126,142 @@ export class ProvadorViewport {
 
         this.folderCustom = this.gui.addFolder("Customização");
 
-        this.folderCustom.add(this.#modelo.params, "cintura", 0, 3, 1).name("Cintura").onChange((value) => {
-            this.#modelo.setCintura(value);
-        });
+        this.folderCustom
+            .add(this.modelo.params, "cintura", 0, 3, 1)
+            .name("Cintura")
+            .onChange((value) => {
+                this.modelo.setCintura(value);
+            });
 
-        this.folderCustom.add(this.#modelo.params, "busto", 1 / 4, 1, 1 / 4).name("Busto").onChange(() => {
-            this.#modelo.updateMorphs();
-            this.#modelo.updateCircunferencias();
-        });
+        this.folderCustom
+            .add(this.modelo.params, "busto", 1 / 4, 1, 1 / 4)
+            .name("Busto")
+            .onChange(() => {
+                this.modelo.updateMorphs();
+                this.modelo.updateCircunferencias();
+            });
 
-        this.folderCustom.add(this.#modelo.params, "tipo_corpo", 0, 2, 1).name("Tipo de Corpo").onChange((value) => {
-            this.#modelo.setTipoCorpo(value);
-        });
+        this.folderCustom
+            .add(this.modelo.params, "tipo_corpo", 0, 1, 1)
+            .name("Tipo de Corpo")
+            .onChange((value) => {
+                this.modelo.setTipoCorpo(value);
+            });
 
-        // this.folder_custom.add(this.#modelo.params, "tamanho", 0.85, 1.15, 0.01).onChange((value) => {
-        //     this.#modelo.escalarTamanho(value);
-        // });
+        this.folderCustom
+            .add(this.modelo.params, "altura", 0, 3, 1)
+            .name("Altura")
+            .onChange((value) => {
+                this.modelo.setAltura(value);
+            });
 
-        this.folderCustom.add(this.#modelo.params, "pernas", 0.75, 1.25, 0.01).name("Altura").onChange((value) => {
-            this.#modelo.escalarPernas(value);
-        });
+        this.folderCustom.add(this.modelo.params, "aplicar").name("Aplicar");
 
-        this.folderCustom.add(this.#modelo.params, "aplicar").name("Aplicar");
-
-        
         // ----------------------------------- Campos de roupas ----------------------------------- //
-        const roupasId = Array(2).fill().map((_, index) => index);
-        const paramsRoupas = { 
+        const roupasId = Array(2)
+            .fill()
+            .map((_, index) => index);
+        const paramsRoupas = {
             roupaCima: 0,
-            tamCima: "P", 
+            tamCima: "P",
             roupaBaixo: 0,
-            tamBaixo: "P", 
-            removerRoupaCima: () => { 
-                if (this.roupaCima) { 
-                    this.roupaCima.removerRoupa(); 
-                    this.roupaCima = undefined; 
-                } },
-            removerRoupaBaixo: () => { 
-                if (this.roupaBaixo) { 
-                    this.roupaBaixo.removerRoupa(); 
-                    this.roupaBaixo = undefined; 
-                } }
+            tamBaixo: "P",
+            removerRoupaCima: () => {
+                if (this.roupaCima) {
+                    this.roupaCima.removerRoupa();
+                    this.roupaCima = undefined;
+                }
+            },
+            removerRoupaBaixo: () => {
+                if (this.roupaBaixo) {
+                    this.roupaBaixo.removerRoupa();
+                    this.roupaBaixo = undefined;
+                }
+            },
         };
-        
-        
+
         // ----------------------------------- Campos de roupa de cima ----------------------------------- //
-        this.folderRoupaCima = this.gui.addFolder('Roupa Cima');
-        
-        this.folderRoupaCima.add(paramsRoupas, "roupaCima", roupasId).name("Id").onChange((value) => {
-            if (value == 0) {
-                paramsRoupas.removerRoupaCima();
-            } else {
-                this.carregaRoupa(value, "cima");
-                if (ddTamCima) ddTamCima.setValue(this.roupaCima.getTamanhosValidos()[0]);
-            }
-        })
-        let ddTamCima = this.folderRoupaCima.add(paramsRoupas, "tamCima", ["P", "M", "G", "GG"]).name("Tamanho").onChange((value) => {
-            if (this.roupaCima) this.roupaCima.mudarTamanho(value);
-        });
+        this.folderRoupaCima = this.gui.addFolder("Roupa Cima");
+
+        this.folderRoupaCima
+            .add(paramsRoupas, "roupaCima", roupasId)
+            .name("Id")
+            .onChange((value) => {
+                if (value == 0) {
+                    paramsRoupas.removerRoupaCima();
+                } else {
+                    this.carregaRoupa(value, "cima");
+                    if (ddTamCima) ddTamCima.setValue(this.roupaCima.getTamanhosValidos()[0]);
+                }
+            });
+        let ddTamCima = this.folderRoupaCima
+            .add(paramsRoupas, "tamCima", ["P", "M", "G", "GG"])
+            .name("Tamanho")
+            .onChange((value) => {
+                if (this.roupaCima) this.roupaCima.mudarTamanho(value);
+            });
 
         this.folderRoupaCima.add(paramsRoupas, "removerRoupaCima").name("Remover");
         this.folderRoupaCima.hide();
 
-
         // ----------------------------------- Campos de roupa de baixo ----------------------------------- //
-        this.folderRoupaBaixo = this.gui.addFolder('Roupa Baixo');
+        this.folderRoupaBaixo = this.gui.addFolder("Roupa Baixo");
 
-        this.folderRoupaBaixo.add(paramsRoupas, "roupaBaixo", roupasId).name("Id").onChange((value) => {
-            if (value == 0) {
-                paramsRoupas.removerRoupaBaixo();
-            } else this.carregaRoupa(value, "baixo");
-        })
+        this.folderRoupaBaixo
+            .add(paramsRoupas, "roupaBaixo", roupasId)
+            .name("Id")
+            .onChange((value) => {
+                if (value == 0) {
+                    paramsRoupas.removerRoupaBaixo();
+                } else this.carregaRoupa(value, "baixo");
+            });
 
         this.folderRoupaBaixo.add(paramsRoupas, "removerRoupaBaixo").name("Remover");
         this.folderRoupaBaixo.hide();
-
 
         // ----------------------------------- Janela de medidas ----------------------------------- //
         const guiMedidas = new GUI({ title: "Medidas", width: 200 });
         guiMedidas.domElement.style.left = "25px";
         guiMedidas.domElement.style.top = "25px";
 
-        const alturaController = guiMedidas.add(this.#modelo.params, "altura").name("Altura").decimals(2).listen();
+        const alturaController = guiMedidas.add(this.modelo.params, "altura_m").name("Altura").decimals(2).listen();
         alturaController.domElement.querySelector("input").disabled = true;
 
-        const bustoController = guiMedidas.add(this.#modelo.params, "circ_busto").name("Busto").decimals(0).listen();
+        const bustoController = guiMedidas.add(this.modelo.params, "circ_busto").name("Busto").decimals(0).listen();
         bustoController.domElement.querySelector("input").disabled = true;
 
-        const cinturaController = guiMedidas.add(this.#modelo.params, "circ_cintura").name("Cintura").decimals(0).listen();
+        const cinturaController = guiMedidas
+            .add(this.modelo.params, "circ_cintura")
+            .name("Cintura")
+            .decimals(0)
+            .listen();
         cinturaController.domElement.querySelector("input").disabled = true;
 
-        const quadrilController = guiMedidas.add(this.#modelo.params, "circ_quadril").name("Quadril").decimals(0).listen();
+        const quadrilController = guiMedidas
+            .add(this.modelo.params, "circ_quadril")
+            .name("Quadril")
+            .decimals(0)
+            .listen();
         quadrilController.domElement.querySelector("input").disabled = true;
     }
 
-
-    /** Carrega uma peça de roupa no modelo 
+    /** Carrega uma peça de roupa no modelo
      * @param {String} id - Id da peça de roupa
      * @param {String} tipo - Tipo da peça de roupa (cima ou baixo)
      * @returns {Array} Retorna um array contendo os tamanhos disponíveis da peça de roupa
-    */
+     */
     carregaRoupa(id, tipo) {
         const url = "models/roupas/" + id;
 
-        try {   
+        try {
             const request = new XMLHttpRequest();
             request.open("GET", url + "/info.json", false);
-            request.send(null)
+            request.send(null);
             const info = JSON.parse(request.responseText);
-            
+
             if (info.tipo == tipo) {
                 if (tipo == "cima") {
-                    this.roupaCima = new RoupaCima(this.#scene, url + "/" + id + ".glb", this.#modelo);
+                    this.roupaCima = new RoupaCima(this.#scene, url + "/" + id + ".glb", this.modelo);
                     this.roupaCima.initRoupa();
                 }
             }
@@ -300,20 +314,18 @@ class Modelo {
     /** Controlador de rotação do modelo */
     objectControls;
 
+    /** True se alterações de morfologias foram aplicadas */
+    aplicado = false;
+
     /** Parâmetros para customização do modelo 3D */
     params = {
-        tamanho: 1,
-        bracos: 1,
-        pernas: 1,
-        tronco: 1,
-        cabeca: 1,
-        altura: 0.0,
+        altura_m: 0.0,
         circ_busto: 0.0,
         circ_cintura: 0.0,
         circ_quadril: 0.0,
         comprimento_braco: 0.0,
         comprimento_perna: 0.0,
-        anim: 0,
+        altura: 0,
         musculatura: 0.5,
         cintura: 0,
         tipo_corpo: 0,
@@ -328,16 +340,15 @@ class Modelo {
         coluna: 0,
         aplicar: () => {
             this.aplicarAlteracoes();
-            
         },
     };
 
-    constructor(provador, scene = null, renderer = null, url = null) { 
+    constructor(provador, scene = null, renderer = null, url = null) {
         this.#provador = provador;
         this.#scene = scene;
         this.#renderer = renderer;
         this.#url = url;
-    }    
+    }
 
     /** Carrega o arquivo 3D em armazenado em this.url
      * @returns {Promise} Retorna uma promessa que resolve o objeto 3D do modelo carregado
@@ -378,6 +389,7 @@ class Modelo {
 
     /** Inicializa o modelo 3D */
     async initModelo() {
+        showLoadingGif();
         try {
             this.#model = await this.#carregaModelo(); // Espera o modelo ser carregado
             console.log("Modelo carregado:", this.#model);
@@ -386,7 +398,7 @@ class Modelo {
 
             // Definir ossos de interesse
             skeletonHelper.bones.forEach((bone, index) => {
-                console.log(`Bone ${index}: ${bone.name}`);
+                // console.log(`Bone ${index}: ${bone.name}`);
 
                 if (!this.ossos.quadril && bone.name.includes("Hips")) this.ossos.quadril = bone;
 
@@ -419,14 +431,14 @@ class Modelo {
 
             // Achar os vértices do busto e quadril
             const positions = BufferGeometryUtils.computeMorphedAttributes(this.#malha).morphedPositionAttribute.array;
-            this.#vertsBusto = VertexUtils.sortVerticesByAngle(
-                VertexUtils.filterVerticesByHeight(positions, 9.3, 9.33, -1.2, 1.2)
+            this.#vertsBusto = ObjectUtils.sortVerticesByAngle(
+                ObjectUtils.filterVerticesByHeight(positions, 9.3, 9.33, -1.2, 1.2)
             );
-            this.#vertsCintura = VertexUtils.sortVerticesByAngle(
-                VertexUtils.filterVerticesByHeight(positions, 8.0, 8.03, -2.2, 2.2)
+            this.#vertsCintura = ObjectUtils.sortVerticesByAngle(
+                ObjectUtils.filterVerticesByHeight(positions, 8.0, 8.03, -2.2, 2.2)
             );
-            this.#vertsQuadril = VertexUtils.sortVerticesByAngle(
-                VertexUtils.filterVerticesByHeight(positions, 6.5, 6.555, -4.2, 4.2)
+            this.#vertsQuadril = ObjectUtils.sortVerticesByAngle(
+                ObjectUtils.filterVerticesByHeight(positions, 6.5, 6.555, -4.2, 4.2)
             );
             this.updateCircunferencias();
 
@@ -434,22 +446,24 @@ class Modelo {
         } catch (error) {
             console.error("Erro ao carregar o modelo:", error);
         }
+        hideLoadingGif();
     }
 
     /** Aplica as alterações realizadas na malha e refaz o cálculo do sombreamento */
     aplicarAlteracoes() {
         if (this.#malha) {
             // Modelo deve estar na posição original para aplicar as alterações
-            
+            this.resetarEscalas();
+
             // Aplicar as alterações feitas na GPU
             this.#malha.geometry.setAttribute(
                 "position",
                 BufferGeometryUtils.computeMorphedAttributes(this.#malha).morphedPositionAttribute
             );
-            
+
             // Resetar as alterações de escala e morfologia
             this.#malha.updateMorphTargets();
-            this.resetarEscalas();
+            this.setAltura(this.getAltura());
 
             // Recalcular os vetores normais
             this.#malha.geometry.computeVertexNormals();
@@ -458,6 +472,8 @@ class Modelo {
             this.#provador.folderCustom.hide();
             this.#provador.folderRoupaCima.show();
             this.#provador.folderRoupaBaixo.show();
+
+            this.aplicado = true;
         }
     }
 
@@ -481,12 +497,12 @@ class Modelo {
     updateCircunferencias() {
         if (this.#vertsBusto.length > 0 && this.#vertsQuadril.length > 0) {
             const positions = BufferGeometryUtils.computeMorphedAttributes(this.#malha).morphedPositionAttribute.array;
-            this.#vertsBusto = VertexUtils.getVertexFromIndex(this.#vertsBusto, positions);
-            this.#vertsQuadril = VertexUtils.getVertexFromIndex(this.#vertsQuadril, positions);
-            this.#vertsCintura = VertexUtils.getVertexFromIndex(this.#vertsCintura, positions);
-            this.params.circ_busto = VertexUtils.calculateCircumference(this.#malha, this.#vertsBusto) * 100;
-            this.params.circ_quadril = VertexUtils.calculateCircumference(this.#malha, this.#vertsQuadril) * 100;
-            this.params.circ_cintura = VertexUtils.calculateCircumference(this.#malha, this.#vertsCintura) * 100;
+            this.#vertsBusto = ObjectUtils.getVertexFromIndex(this.#vertsBusto, positions);
+            this.#vertsQuadril = ObjectUtils.getVertexFromIndex(this.#vertsQuadril, positions);
+            this.#vertsCintura = ObjectUtils.getVertexFromIndex(this.#vertsCintura, positions);
+            this.params.circ_busto = ObjectUtils.calculateCircumference(this.#malha, this.#vertsBusto) * 100;
+            this.params.circ_quadril = ObjectUtils.calculateCircumference(this.#malha, this.#vertsQuadril) * 100;
+            this.params.circ_cintura = ObjectUtils.calculateCircumference(this.#malha, this.#vertsCintura) * 100;
         }
     }
 
@@ -508,6 +524,11 @@ class Modelo {
         return this.ossos.quadril.getWorldPosition(new THREE.Vector3()).y;
     }
 
+    /** @returns {Number} Retorna a altura escolhida do modelo */
+    getAltura() {
+        return this.params.altura;
+    }
+
     /** Reseta as alterações de escala realizadas no modelo */
     resetarEscalas() {
         this.escalarTamanho(1, false);
@@ -525,15 +546,15 @@ class Modelo {
     }
 
     /** Define a opção de cintura do modelo
-     * @param {Number} selecao - Valor de seleção, 0 para cintura fina, 1 para cintura média e 2 para cintura larga
+     * @param {Number} selecao - Valor de seleção, 0 para cintura P, 1 para cintura M, 2 para cintura G e 3 para cintura GG
      */
     setCintura(selecao) {
         if (selecao == 0 || selecao == 1) {
             this.params.musculatura = 0.5 + selecao * 0.5;
             this.params.peso = 0;
-        } else { 
+        } else {
             this.params.musculatura = 0;
-            this.params.peso = (1/4)*(selecao+1);
+            this.params.peso = (1 / 4) * (selecao + 1);
         }
 
         this.updateMorphs();
@@ -548,13 +569,16 @@ class Modelo {
 
         if (selecao == 0) {
             this.params.ampulheta = 0.5;
-        } else if (selecao == 1) {
-            this.params.triangulo_invertido = 0.5;
         } else {
             this.params.retangulo = 0.5;
         }
 
         this.updateMorphs();
+        this.updateCircunferencias();
+    }
+
+    setAltura(selecao) {
+        this.escalarTamanho(1 + (selecao * 0.060));
         this.updateCircunferencias();
     }
 
@@ -564,7 +588,7 @@ class Modelo {
      */
     escalarTamanho(valor, mover = true) {
         this.escalarOsso(this.ossos.quadril, new THREE.Vector3(valor, valor, valor));
-        if (mover) this.#model.position.y = 0 + (valor - 1) + (this.params.pernas - 1);
+        if (mover) this.#model.position.y = 0 + (valor - 1);
     }
 
     /** Realiza a escala do tamanho da cabeça do modelo
@@ -639,6 +663,7 @@ class Roupa {
 
     /** Morphs do modelo */
     #morphs = {
+        altura: 0,
         busto: 0,
         tipo_corpo: 0,
         cintura: 0,
@@ -688,17 +713,20 @@ class Roupa {
 
     /** Inicializa o modelo 3D da peça de roupa*/
     async initRoupa() {
+        showLoadingGif();
+        this.#morphs.altura = this.#modelo.params.altura;
         this.#morphs.busto = this.#modelo.params.busto * 4 - 1;
         this.#morphs.tipo_corpo = this.#modelo.params.tipo_corpo;
         this.#morphs.cintura = this.#modelo.params.cintura;
-        
+
         try {
             this.#model = await this.#carregaModelo(); // Espera o modelo ser carregado
 
-            this.#modelo.ossos.quadril.attach(this.#model); // Anexa a roupa ao manequim
+            console.log("Morphs:", this.#morphs);
 
             this.#malha.morphTargetInfluences[
                 this.#getIndiceMorph(
+                    this.#morphs.altura,
                     this.#morphs.busto,
                     this.#morphs.tipo_corpo,
                     this.#morphs.cintura,
@@ -706,13 +734,18 @@ class Roupa {
                     [2, 2, 2, 1]
                 )
             ] = 1;
-            
+
             this.aplicarAlteracoes();
 
+            this.#model.position.y += 0.09 * this.#morphs.altura; // Ajusta a posição da roupa de acordo com a altura
+            
+            this.#modelo.ossos.quadril.attach(this.#model); // Anexa a roupa ao manequim
+            
             //
         } catch (error) {
             console.error("Erro ao carregar o modelo:", error);
         }
+        hideLoadingGif();
     }
 
     /** Aplica as alterações realizadas na malha e refaz o cálculo do sombreamento */
@@ -724,53 +757,64 @@ class Roupa {
                 BufferGeometryUtils.computeMorphedAttributes(this.#malha).morphedPositionAttribute
             );
             this.#malha.updateMorphTargets();
-            // this.resetarEscalas();
             this.#malha.geometry.computeVertexNormals();
         }
     }
 
-    /** Função para converter índices de um array 4D em um índice 1D, levando em conta dim4 variável */
-    #getIndiceMorph(i, j, k, l, dim4_sizes) {
+    // Função para converter índices de um array 5D em um índice 1D, levando em conta a última dimensão variável
+    #getIndiceMorph(i, j, k, l, m, dim5_sizes) {
         let index1D = 0;
 
-        // Primeiro, acumule os saltos das camadas anteriores (i, j)
-        // Vamos supor que as dimensões anteriores (i, j) sejam fixas com 4 e 3
+        // Primeira dimensão (tamanho fixo 4)
         for (let ii = 0; ii < i; ii++) {
-            for (let jj = 0; jj < 3; jj++) {  // Assumindo que a segunda dimensão (j) tem sempre tamanho 3
-                for (let kk = 0; kk < 4; kk++) {  // Agora k varia de 0 a 3, então usamos 4 como limite
-                    index1D += dim4_sizes[kk];  // Acumular o salto de acordo com k
+            for (let jj = 0; jj < 4; jj++) {  // Segunda dimensão (tamanho fixo 4)
+                for (let kk = 0; kk < 2; kk++) {  // Terceira dimensão (tamanho fixo 2)
+                    for (let ll = 0; ll < 4; ll++) {  // Quarta dimensão (tamanho fixo 4)
+                        index1D += dim5_sizes[ll]; // Acumulando o salto com base na quinta dimensão variável
+                    }
                 }
             }
         }
 
-        // Acumular o salto das camadas anteriores de j para o i atual
+        // Segunda dimensão (tamanho fixo 4) para o valor atual de i
         for (let jj = 0; jj < j; jj++) {
-            for (let kk = 0; kk < 4; kk++) {
-                index1D += dim4_sizes[kk];  // Acumular o salto de acordo com k
+            for (let kk = 0; kk < 2; kk++) {
+                for (let ll = 0; ll < 4; ll++) {
+                    index1D += dim5_sizes[ll];
+                }
             }
         }
 
-        // Acumular o salto das camadas anteriores de k para os valores de i e j atuais
+        // Terceira dimensão (tamanho fixo 2) para os valores atuais de i e j
         for (let kk = 0; kk < k; kk++) {
-            index1D += dim4_sizes[kk];  // Acumular o salto de acordo com k
+            for (let ll = 0; ll < 4; ll++) {
+                index1D += dim5_sizes[ll];
+            }
         }
 
-        // Finalmente, adicionar o índice da quarta dimensão (l) considerando o valor de k
-        index1D += l;
+        // Quarta dimensão (tamanho fixo 4) para os valores atuais de i, j e k
+        for (let ll = 0; ll < l; ll++) {
+            index1D += dim5_sizes[ll];
+        }
+
+        // Finalmente, adiciona o índice para a quinta dimensão variável (m)
+        index1D += m;
+
+        console.log("Índice 1D:", index1D);
 
         return index1D;
     }
 
     getTamanhosValidos() {
         const tamanhos = ["P", "M", "G", "GG"];
-        const idx = (this.#morphs.cintura);
+        const idx = this.#morphs.cintura;
         console.log("Tamanhos válidos:", tamanhos.slice(idx, idx + 2));
         return tamanhos.slice(idx, idx + 2);
     }
 
-    /** Muda o tamanho da peça de roupa 
+    /** Muda o tamanho da peça de roupa
      * @param {String} tamanho - Tamanho da peça de roupa (P, M, G, GG)
-    */
+     */
     mudarTamanho(tamanho) {
         const tamValidos = this.getTamanhosValidos();
 
@@ -779,15 +823,15 @@ class Roupa {
         this.#morphs.tamanho = tamValidos.indexOf(tamanho);
 
         if (this.originalPositions) {
-            this.#malha.geometry.setAttribute(
-                "position",
-                this.originalPositions.clone()
-            );
-            
+            this.#malha.geometry.setAttribute("position", this.originalPositions.clone());
+
             this.#malha.updateMorphTargets();
-            
+
+            console.log("Morphs:", this.#morphs);
+
             this.#malha.morphTargetInfluences[
                 this.#getIndiceMorph(
+                    this.#morphs.altura,
                     this.#morphs.busto,
                     this.#morphs.tipo_corpo,
                     this.#morphs.cintura,
@@ -795,7 +839,7 @@ class Roupa {
                     [2, 2, 2, 1]
                 )
             ] = 1;
-            
+
             this.aplicarAlteracoes();
         }
     }
@@ -803,7 +847,7 @@ class Roupa {
     /** Remove a roupa da cena */
     removerRoupa() {
         this.#model.removeFromParent();
-        VertexUtils.deepDispose(this.#malha);
+        ObjectUtils.deepDispose(this.#malha);
         this.#scene.remove(this.#malha);
         this.#scene.remove(this.#model);
         this.#malha = undefined;
@@ -814,5 +858,34 @@ class Roupa {
 class RoupaCima extends Roupa {
     constructor(scene, url, modelo) {
         super(scene, url, modelo);
+    }
+}
+
+// Função para criar e exibir o GIF de loading
+async function showLoadingGif() {
+    const loadingDiv = document.createElement("div");
+    loadingDiv.id = "loading";
+    loadingDiv.style.position = "fixed";
+    loadingDiv.style.width = "50px";
+    loadingDiv.style.height = "50px";
+    loadingDiv.style.top = "50%";
+    loadingDiv.style.left = "50%";
+    loadingDiv.style.fontFamily = "Cascadia Code";
+    loadingDiv.style.transform = "translate(-50%, -50%)";
+    loadingDiv.style.zIndex = "9999"; // Para garantir que esteja na frente de tudo
+
+    const loadingGif = document.createElement("img");
+    loadingGif.src = "textures/load.gif";
+    loadingGif.alt = "CARREGANDO...";
+
+    loadingDiv.appendChild(loadingGif);
+    document.body.appendChild(loadingDiv);
+}
+
+// Função para remover o GIF de loading
+function hideLoadingGif() {
+    const loadingDiv = document.getElementById("loading");
+    if (loadingDiv) {
+        document.body.removeChild(loadingDiv);
     }
 }
