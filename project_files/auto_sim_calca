@@ -1,0 +1,321 @@
+import bpy
+import time
+
+bpy.ops.object.select_all(action='DESELECT')
+
+nome_roupa = "Calca"
+
+nome_modelo = 'female_genericMesh.001'
+
+granularidade = 4
+
+tamanhos = ['PP',  'P', 'M', 'G', 'GG']
+
+alturas = ['150', '160', '170', '180']
+
+altura = 0
+
+pos_orig_roupa = (0, 0, 0)
+
+shape_keys = bpy.data.shape_keys["Key.004"].key_blocks
+
+def reset_shapes():
+    for shape_key in shape_keys:
+        shape_key.value = 0
+    
+        
+def create_collection(name):
+    my_coll = bpy.data.collections.get(name)
+    if my_coll is None:
+        print(f"Criando colecao '{name}'.")
+        my_coll = bpy.data.collections.new(name)
+        bpy.context.scene.collection.children.link(my_coll)
+    #my_coll.hide_viewport = True
+    return my_coll
+        
+
+def duplicar_e_mover_objeto(nome_objeto, nome_colecao_destino, novo_nome):
+    # Obtém o objeto pelo nome
+    objeto_original = bpy.data.objects.get(nome_objeto)
+    
+    if objeto_original is None:
+        raise Exception(f"Objeto '{nome_objeto}' não encontrado.")
+    
+    # Obtém a coleção de destino pelo nome
+    colecao_destino = create_collection(nome_colecao_destino)
+    
+    # Deseleciona todos os objetos
+    bpy.ops.object.select_all(action='DESELECT')
+    
+    # Copiar Objeto
+    objeto_duplicado = objeto_original.copy()
+    objeto_duplicado.data = objeto_original.data.copy()
+    
+    # Verifica se realmente estamos lidando com a cópia 
+    if objeto_duplicado != objeto_original:
+        # Renomeia o objeto duplicado
+        objeto_duplicado.name = novo_nome
+        
+        # Adiciona o objeto duplicado na coleção de destino
+        colecao_destino.objects.link(objeto_duplicado)
+        
+        # Remove o objeto duplicado da coleção original
+        for colecao in objeto_duplicado.users_collection:
+            if colecao != colecao_destino:
+                colecao.objects.unlink(objeto_duplicado)
+        
+        print(f"Objeto '{objeto_original.name}' duplicado como '{objeto_duplicado.name}' e movido para a coleção '{nome_colecao_destino}'.")
+    else:
+        print(f"Erro ao duplicar o objeto '{objeto_original.name}'.")
+    
+    return novo_nome
+
+
+def aplicar_modificador(nome_objeto, nome_modificador):
+    # Obtém o objeto pelo nome
+    objeto = bpy.data.objects.get(nome_objeto)
+    
+    if objeto is None:
+        print(f"Objeto '{nome_objeto}' não encontrado.")
+        return
+    
+    # Verifica se o modificador existe no objeto
+    modificador = objeto.modifiers.get(nome_modificador)
+    
+    if modificador is None:
+        print(f"Modificador '{nome_modificador}' não encontrado no objeto '{nome_objeto}'.")
+        return
+    
+    # Seleciona o objeto
+    bpy.ops.object.select_all(action='DESELECT')  # Deseleciona todos os objetos
+    objeto.select_set(True)
+    bpy.context.view_layer.objects.active = objeto
+    
+    # Aplica o modificador
+    bpy.ops.object.modifier_apply(modifier=nome_modificador)
+    
+    print(f"Modificador '{nome_modificador}' foi aplicado no objeto '{nome_objeto}'.")
+
+        
+def bake_cloth_simulation(nome_objeto):
+    # Tenta obter o objeto pelo nome
+    objeto = bpy.data.objects.get(nome_objeto)
+    
+    if objeto is None:
+        raise Exception(f"Objeto '{nome_objeto}' nao encontrado.")
+    
+    # Verifica se o objeto tem um modificador de cloth
+    cloth_modifier = None
+    for modifier in objeto.modifiers:
+        if modifier.type == 'CLOTH':
+            cloth_modifier = modifier
+            break
+    
+    if cloth_modifier is None:
+        raise Exception(f"O objeto '{nome_objeto}' nao tem um modificador de cloth.")
+    
+    # Seleciona o objeto
+    bpy.ops.object.select_all(action='DESELECT')  # Deseleciona todos os objetos
+    objeto.select_set(True)
+    bpy.context.view_layer.objects.active = objeto
+    
+    print("Executando Bake de cloth")
+    
+    # Executa o bake da simulação de cloth
+    bpy.ops.ptcache.free_bake_all()
+    bpy.ops.ptcache.bake_all(bake=True)
+
+    print(f"Bake concluido")
+
+
+def criar_blend_shape(nome_obj_sim, nome_colecao, nome_blend_shape, tam, relative = None):
+    novo_obj = duplicar_e_mover_objeto(nome_obj_sim, nome_colecao, nome_blend_shape)
+    escalar_objeto(novo_obj, 1 + (0.056 * tam))
+    bake_cloth_simulation(novo_obj)
+    aplicar_modificador(novo_obj, "Cloth")
+    aplicar_modificador(novo_obj, "Subdivision")
+    aplicar_modificador(novo_obj, "Solidify")
+    join_as_shapes("Base_" + nome_roupa, novo_obj, relative) 
+
+
+def join_as_shapes(obj_base, obj_shape, relative = None):
+    # Certifique-se de que ambos os objetos existem
+    objeto_base = bpy.data.objects.get(obj_base)
+    objeto_shape = bpy.data.objects.get(obj_shape)
+    
+    if objeto_base is None:
+        print(f"Objeto base '{obj_base}' não encontrado.")
+        return
+    if objeto_shape is None:
+        print(f"Objeto shape '{obj_shape}' não encontrado.")
+        return
+    
+    bpy.ops.object.select_all(action='DESELECT')
+    objeto_shape.select_set(True) # Define o objeto shape como ativo
+    
+    # Aplica a escala (scale=True, rotation=False, location=False)
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    
+    # Certifique-se de que o objeto base tenha um Shape Key Block
+    if objeto_base.data.shape_keys is None:
+        objeto_base.shape_key_add(from_mix=False)
+    
+    # Adiciona uma nova shape key usando a malha do objeto shape
+    bpy.context.view_layer.objects.active = objeto_base
+    bpy.ops.object.select_all(action='DESELECT')
+    
+    # Seleciona ambos os objetos e define o objeto base como ativo
+    objeto_base.select_set(True)
+    objeto_shape.select_set(True)
+    
+    # Aplica a função Join as Shapes
+    bpy.ops.object.join_shapes()
+    
+    # Muda relative key
+    if relative != None:
+        new_relative = objeto_base.data.shape_keys.key_blocks.get(relative)
+        if new_relative != None:
+            objeto_base.data.shape_keys.key_blocks.get(objeto_shape.name).relative_key = new_relative
+    
+    print(f"Shape key adicionada ao objeto '{objeto_base.name}' a partir de '{objeto_shape.name}'.")
+    
+    
+def mover_objeto(nome_objeto, deslocamento):
+    # Obtém o objeto pelo nome
+    objeto = bpy.data.objects.get(nome_objeto)
+    
+    if objeto is None:
+        print(f"Objeto '{nome_objeto}' não encontrado.")
+        return
+    
+    # Seleciona o objeto
+    bpy.ops.object.select_all(action='DESELECT')  # Deseleciona todos os objetos
+    objeto.select_set(True)
+    bpy.context.view_layer.objects.active = objeto
+    
+    # Aplica a translação
+    bpy.ops.transform.translate(value=deslocamento)
+    
+    print(f"Objeto '{nome_objeto}' movido com um deslocamento de {deslocamento}.")
+
+
+
+def mover_objeto_mundo(nome_objeto, nova_localizacao):
+    # Obtém o objeto pelo nome
+    objeto = bpy.data.objects.get(nome_objeto)
+    
+    if objeto is None:
+        print(f"Objeto '{nome_objeto}' não encontrado.")
+        return
+    
+    # Define a nova localização do objeto
+    objeto.location = nova_localizacao
+    print(f"Objeto '{nome_objeto}' foi movido para {nova_localizacao}.")
+    
+
+def escalar_objeto(nome_objeto, fator_escala):
+    # Obtém o objeto pelo nome
+    objeto = bpy.data.objects.get(nome_objeto)
+
+    if objeto is None:
+        print(f"Objeto '{nome_objeto}' não encontrado.")
+        return
+    
+    # Seleciona o objeto
+    bpy.ops.object.select_all(action='DESELECT')  # Deseleciona todos os objetos
+    objeto.select_set(True)
+    bpy.context.view_layer.objects.active = objeto
+    
+    # Aplica a escala usando o fator de escala
+    bpy.ops.transform.resize(value=(fator_escala, fator_escala, fator_escala))
+    
+    print(f"Objeto '{nome_objeto}' foi escalado com um fator de {fator_escala}.")
+
+
+def resetar_escala(objeto_nome):
+    # Obtém o objeto pelo nome
+    objeto = bpy.data.objects.get(objeto_nome)
+    
+    if objeto is None:
+        print(f"Objeto '{objeto_nome}' não encontrado.")
+        return
+    
+    # Reseta a escala do objeto para (1, 1, 1)
+    objeto.scale = (1.0, 1.0, 1.0)
+    print(f"Escala do objeto '{objeto_nome}' foi resetada.")
+
+    
+def tam_from_peso(peso):
+    return [n for n in range(peso, min(peso + 2, 5))]
+
+
+then = time.time()
+
+reset_shapes()
+
+shape_keys["Musculatura"].value = 0.5;
+
+resetar_escala(nome_modelo)
+resetar_escala(nome_roupa)
+mover_objeto_mundo(nome_roupa, pos_orig_roupa)
+
+novo_obj = duplicar_e_mover_objeto(nome_roupa, nome_roupa, "Base_" + nome_roupa)
+
+bake_cloth_simulation(novo_obj)
+
+aplicar_modificador(novo_obj, "Cloth")
+aplicar_modificador(novo_obj, "Subdivision")
+aplicar_modificador(novo_obj, "Solidify")
+
+for a in range(0,4):
+    fator_escala_modelo = (0.060 * a)
+    desloc_roupa = (0.40 * a)
+    
+    if a > 0: 
+        escalar_objeto(nome_modelo, 1 + fator_escala_modelo)
+        mover_objeto(nome_roupa, (0.0, 0.0, desloc_roupa))
+
+    for shape_key in shape_keys:    
+        
+        if shape_key.name == "Ampulheta" or shape_key.name == "Retangulo":
+        
+            shape_key.value = 0.5
+            shape_keys["Peso"].value = 0
+            #mover_objeto_mundo(nome_roupa, pos_orig_roupa)
+            #mover_objeto(nome_roupa, (0.0, 0.0, desloc_roupa))
+            
+            for j in range(1, 5):
+                if j > 2:
+                    shape_keys["Musculatura"].value = 0
+                    shape_keys["Peso"].value = (1/4)*j
+                else:
+                    shape_keys["Musculatura"].value = 0.5 * j;
+                    shape_keys["Peso"].value = 0
+                    
+                for tam in tam_from_peso(j):
+                    #mover_objeto(nome_roupa, (0.0, 0.0, -1))
+                    criar_blend_shape(
+                        nome_roupa, 
+                        "Altura_" + alturas[a],
+                        alturas[a] + "_" 
+                        + nome_roupa + "_"
+                        + shape_key.name 
+                        + "_" + tamanhos[j] 
+                        + "_" + tamanhos[tam],
+                        tam-1
+                    )
+            
+            shape_key.value = 0
+                
+    resetar_escala(nome_modelo)
+    mover_objeto_mundo(nome_roupa, pos_orig_roupa)
+                
+resetar_escala(nome_modelo)
+resetar_escala(nome_roupa)
+mover_objeto_mundo(nome_roupa, pos_orig_roupa)
+reset_shapes()
+
+now = time.time()
+
+print("Operacao levou: ", now-then, " segundos")
+        
