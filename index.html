@@ -11,10 +11,45 @@
             body {
                 margin: 0;
             }
+
+            #grid {
+                display: grid;
+                grid-template-columns: 1fr 3fr;
+                height: 100vh;
+            }
+
+            #stats {
+                display: grid;
+                background-color: #333;
+                width: 70vw;
+                height: auto;
+            }
+
+            #container {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                width: 100%;
+            }
+
+            #fps {
+                background-color: white;
+                width: 90%;
+                height: fit-content;
+                margin: 50px;
+            }
         </style>
     </head>
     <body>
-        <div id="container"></div>
+        <div id="grid">
+            <div id="stats">
+                <canvas id="fps"></canvas>
+            </div>
+            <div id="container"></div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
         <script
             type="module"
             src="main.js"

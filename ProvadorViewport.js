@@ -7,6 +7,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as BufferGeometryUtils from "three/addons/utils/BufferGeometryUtils.js";
 import * as ObjectUtils from "./ObjectUtils.js";
 
+let carregamento1 = 0;
+
 /**
  * Instancia um novo viewport do provador virtual no elemento definido por containerId.
  * @param {String} containerId - Id do elemento html que conterá o viewport
@@ -19,7 +21,7 @@ export class ProvadorViewport {
     #container;
 
     /** Limite de frames por segundo */
-    #fps = 60;
+    #fps = 500;
 
     /** Intervalo de tempo entre frames */
     #fpsInterval = 1000 / this.#fps;
@@ -29,6 +31,14 @@ export class ProvadorViewport {
 
     /** Renderizador do viewport */
     #renderer = new THREE.WebGLRenderer({ antialias: true });
+
+    #rotate = false;
+
+    #countStats = false;
+
+    #stats = [];
+
+    #timestamps = [];
 
     /** Instância do modelo de manequim */
     modelo = new Modelo(this, this.#scene, this.#renderer, "models/f_padrao.fbx");
@@ -41,7 +51,7 @@ export class ProvadorViewport {
         this.#scene.background = new THREE.Color(0xa3b1c7);
 
         // Inicialização da câmera
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 100);
+        const camera = new THREE.PerspectiveCamera(45, this.#container.clientWidth / this.#container.clientHeight, 1, 100);
         camera.position.z = 2.5;
         camera.position.y = 1;
         camera.position.x = 2;
@@ -59,7 +69,7 @@ export class ProvadorViewport {
 
         // Configuração do renderizador
         this.#renderer.setPixelRatio(window.devicePixelRatio);
-        this.#renderer.setSize(window.innerWidth, window.innerHeight);
+        this.#renderer.setSize(this.#container.clientWidth, this.#container.clientHeight);
 
         // Controlador de câmera
         const cameraControls = new OrbitControls(camera, this.#renderer.domElement);
@@ -85,21 +95,35 @@ export class ProvadorViewport {
 
         // Loop de renderização
         let lastFrameTime = Date.now(); // Tempo do último frame
+        let lastCount = Date.now(); // Tempo do último frame
+        const countInterval = 1000 / 30;
 
         const clock = new THREE.Clock();
 
         this.#renderer.setAnimationLoop(() => {
             const now = Date.now();
             const elapsed = now - lastFrameTime;
+            const elapsedCount = now - lastCount;
 
             if (elapsed > this.#fpsInterval) {
                 lastFrameTime = now - (elapsed % this.#fpsInterval); // Ajustar o tempo para o tempo restante
 
-                // Atualizar informações de altura
+                if (this.#countStats && elapsedCount > countInterval) {
+                    lastCount = now - (elapsedCount % countInterval);
+                    this.#stats.push(elapsed);
+                    this.#timestamps.push(performance.now());
+                }
+
+                if (this.#rotate) {
+                    if (this.modelo.ossos.quadril)
+                        this.modelo.ossos.quadril.rotateOnWorldAxis(new THREE.Vector3(0, 0, 1), 2 * elapsed/1000);
+                }
+
+                // Atualizar informações de altura e comprimento dos membros
                 if (this.modelo.ossos.cabeca_topo) this.modelo.params.altura_m = this.modelo.getAlturaTotal();
 
                 // Resetar a rotação do modelo
-                if (this.modelo.objectControls) this.modelo.objectControls.resetRotation();
+                if (this.modelo.objectControls && !this.#rotate) this.modelo.objectControls.resetRotation();
 
                 this.#renderer.render(this.#scene, camera);
             }
@@ -109,14 +133,15 @@ export class ProvadorViewport {
         window.addEventListener(
             "resize",
             () => {
-                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.aspect = this.#container.clientWidth / this.#container.clientHeight;
                 camera.updateProjectionMatrix();
-                this.#renderer.setSize(window.innerWidth, window.innerHeight);
+                this.#renderer.setSize(this.#container.clientWidth, this.#container.clientHeight);
             },
             false
         );
 
         this.#container.appendChild(this.#renderer.domElement);
+
     }
 
     /** Inicializa uma interface gráfica simples para customização do manequim */
@@ -280,11 +305,11 @@ export class ProvadorViewport {
                     }
 
                     this.roupaCima = new RoupaCima(this.#scene, url + "/" + id + ".glb", this.modelo);
-                    await this.roupaCima.initRoupa();
+                    // await this.roupaCima.initRoupa();
 
-                    if (this.roupaBaixo) {
-                        this.roupaCima.setNoTopo();
-                    }
+                    // if (this.roupaBaixo) {
+                    //     this.roupaCima.setNoTopo();
+                    // }
                 }
                 else {
                     if (this.roupaBaixo) {
@@ -293,11 +318,11 @@ export class ProvadorViewport {
                     }
 
                     this.roupaBaixo = new RoupaBaixo(this.#scene, url + "/" + id + ".glb", this.modelo);
-                    await this.roupaBaixo.initRoupa();
+                    // await this.roupaBaixo.initRoupa();
                     
-                    if (this.roupaCima) {
-                        this.roupaCima.setNoTopo();
-                    }
+                    // if (this.roupaCima) {
+                    //     this.roupaCima.setNoTopo();
+                    // }
                 }
             }
 
@@ -305,6 +330,203 @@ export class ProvadorViewport {
         } catch (error) {
             alert("Erro ao carregar a peça de roupa: " + error);
         }
+    }
+
+    getHardwareDetails() {
+        const extractValue = (str, reg) => {
+            if (typeof str !== "string") return null; // Verificar se `str` é uma string
+            const matches = str.match(reg);
+            return matches && matches[0];
+        }
+
+        const getCPUFromUserAgent = () => {
+            const userAgent = navigator.userAgent.toLowerCase();
+            if (userAgent.includes('arm')) return 'Arquitetura: ARM';
+            if (userAgent.includes('x86') || userAgent.includes('wow64') || userAgent.includes('win64')) return 'Arquitetura: x86-64';
+            return 'Arquitetura: Desconhecida';
+        };
+
+        const estimateCPUClockSpeed = () => {
+            const runs = 150000000;
+            const start = performance.now();
+            for (let i = runs; i>0; i--) {}
+            const end = performance.now();
+            const ms = end - start;
+            const cyclesPerRun = 2;
+            const speed = (runs / ms / 1000000) * cyclesPerRun;
+            return `Clock estimado: ${Math.round(speed*10)/10} GHz`;
+        }
+    
+        // Configuração do WebGL Context
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl');
+        const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    
+        if (!debugInfo) {
+            console.warn("WEBGL_debug_renderer_info não está disponível neste dispositivo.");
+            return "Informações do hardware não disponíveis.";
+        }
+    
+        const vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) || "Desconhecido";
+        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || "Desconhecido";
+    
+        // Obter informações do hardware
+        const layer = extractValue(renderer, /(ANGLE)/g) || "N/A";
+        const card = extractValue(renderer, /((NVIDIA|AMD|Intel)[^\d]*[^\s]+)/) || "Desconhecida";
+    
+        const tokens = card.split(' ');
+        tokens.shift();
+    
+        const manufacturer = extractValue(card, /(NVIDIA|AMD|Intel)/g) || "Desconhecido";
+        const integrated = manufacturer === 'Intel';
+
+        const logicalProcessors = navigator.hardwareConcurrency || "Desconhecido";
+    
+        return `GPU:\n${card}\nIntegrado: ${integrated}\n${renderer}\n\nCPU:\nProcessadores Logicos: ${logicalProcessors}\n${getCPUFromUserAgent()}\n${estimateCPUClockSpeed()}`;
+    }
+    
+    async teste_desempenho() {
+        const delay = (ms) => new Promise((res) => setTimeout(res, ms));
+
+        const calcularMedia = (lista) => {
+            if (!Array.isArray(lista) || lista.length === 0) {
+                throw new Error("A lista deve ser um array não vazio.");
+            }
+            // Filtrar apenas os números menores que 200
+            const numerosValidos = lista.filter(num => num < 200);
+
+            if (numerosValidos.length === 0) {
+                throw new Error("Nenhum número na lista é menor que 200.");
+            }
+
+            // Somar os números e calcular a média
+            const soma = numerosValidos.reduce((acc, val) => acc + val, 0);
+            return soma / numerosValidos.length;
+        }
+
+        let inicio;
+        let fim;
+
+        while(this.modelo.objectControls == undefined) {
+            await delay(1000);
+        }
+
+        this.#countStats = true;
+        this.#rotate = true;
+
+        await delay(1666);
+        inicio = performance.now();
+        this.modelo.setCintura(1);
+        this.modelo.setTipoCorpo(1);
+        this.modelo.setBusto(2);
+        this.modelo.setAltura(1);
+        fim = performance.now();
+        const carregamento2 = fim - inicio;
+        await delay(1666);
+
+        this.#rotate = false;
+        await delay(833);
+        this.#countStats = false;
+        inicio = performance.now();
+        this.modelo.aplicarAlteracoes();
+        fim = performance.now();
+        const carregamento3 = fim - inicio;
+        this.#countStats = true;
+        await delay(833);
+
+        this.#countStats = false;
+        inicio = performance.now();
+        this.carregaRoupa("2", "baixo");
+        await this.roupaBaixo.initRoupa();
+        fim = performance.now();
+        const carregamento4 = fim - inicio;
+        this.#countStats = true;
+        await delay(1666);
+
+        this.#countStats = false;
+        inicio = performance.now();
+        this.carregaRoupa("1", "cima");
+        await this.roupaCima.initRoupa();
+        this.roupaCima.setNoTopo();
+        fim = performance.now();
+        const carregamento5 = fim - inicio;
+        this.#countStats = true;
+        
+        this.#rotate = true;
+        await delay(10000);
+        this.#rotate = false;
+
+        this.#countStats = false;
+
+        const myChart = new Chart("fps", {
+            type: "line",
+            data: {
+                labels: this.#timestamps,
+                datasets: [
+                    {
+                        label: "Tempo por Frame",
+                        pointRadius: 0,
+                        borderColor: "rgba(0,0,255,1.0)",
+                        borderWidth: 1.5,
+                        tension: 0.4,
+                        data: this.#stats,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: "Frames",
+                        },
+                        ticks: {
+                            display: false, // Desativa os valores do eixo X
+                        },
+                        grid: {
+                            display: false, // Desativa a grade do eixo X
+                        },
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: "Tempo (ms)",
+                        },
+                        grid: {
+                            display: false, // Desativa a grade do eixo X
+                        },
+                        beginAtZero: true,
+                    },
+                },
+            },
+        });
+
+        const text = this.getHardwareDetails() +
+         "\n\nTempo de carregamento do modelo: " + carregamento1.toFixed(0) + "ms" +
+         "\nTempo de carregamento para a mudança da morfologia: " + carregamento2.toFixed(0) + "ms" +
+         "\nTempo de carregamento para a aplicação da morfologia: " + carregamento3.toFixed(0) + "ms" +
+         "\nTempo de carregamento da roupa de baixo: " + carregamento4.toFixed(0) + "ms" +
+         "\nTempo de carregamento da roupa de cima: " + carregamento5.toFixed(0) + "ms" +
+         "\n\nMédia de tempo por frame: " + calcularMedia(this.#stats).toFixed(0) + "ms";	
+
+        // Criar um blob com o conteúdo do texto
+        const blob = new Blob([text], { type: "text/plain" });
+
+        // Criar um link para download
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = "info.txt"; // Nome do arquivo
+        link.click(); // Acionar o download
+
+        var a = document.createElement("a");
+        a.href = myChart.toBase64Image();
+        a.download = "teste_perf.png";
+
+        // Trigger the download
+        a.click();
     }
 }
 
@@ -424,16 +646,17 @@ class Modelo {
 
     /** Inicializa o modelo 3D */
     async initModelo() {
+        const inicio = performance.now();
         showLoadingGif();
         try {
             this.#model = await this.#carregaModelo(); // Espera o modelo ser carregado
-            console.log("Modelo carregado:", this.#model);
+            //console.log("Modelo carregado:", this.#model);
 
             const skeletonHelper = new THREE.SkeletonHelper(this.#model);
 
             // Definir ossos de interesse
             skeletonHelper.bones.forEach((bone, index) => {
-                // console.log(`Bone ${index}: ${bone.name}`);
+                // //console.log(`Bone ${index}: ${bone.name}`);
 
                 if (!this.ossos.quadril && bone.name.includes("Hips")) this.ossos.quadril = bone;
 
@@ -482,6 +705,8 @@ class Modelo {
             console.error("Erro ao carregar o modelo:", error);
         }
         hideLoadingGif();
+        const fim = performance.now();
+        carregamento1 = fim - inicio;
     }
 
     /** Aplica as alterações realizadas na malha e refaz o cálculo do sombreamento */
@@ -504,9 +729,11 @@ class Modelo {
             this.#malha.geometry.computeVertexNormals();
 
             // Atualizar a GUI
-            this.#provador.folderCustom.hide();
-            this.#provador.folderRoupaCima.show();
-            this.#provador.folderRoupaBaixo.show();
+            if (this.#provador.folderCustom && this.#provador.folderRoupaCima && this.#provador.folderRoupaBaixo) {
+                this.#provador.folderCustom.hide();
+                this.#provador.folderRoupaCima.show();
+                this.#provador.folderRoupaBaixo.show();
+            }
 
             this.aplicado = true;
         }
@@ -592,6 +819,17 @@ class Modelo {
             this.params.peso = (1 / 4) * (selecao + 1);
         }
 
+        this.params.cintura = selecao;
+
+        this.updateMorphs();
+        this.updateCircunferencias();
+    }
+
+    /** Define o tamanho do busto do modelo
+     * @param {Number} selecao - Valor de seleção, 0 para busto P, 1 para busto M, 2 para busto G e 3 para busto GG
+     */
+    setBusto(selecao) {
+        this.params.busto = 0.25 + (selecao * 0.25);
         this.updateMorphs();
         this.updateCircunferencias();
     }
@@ -608,12 +846,15 @@ class Modelo {
             this.params.retangulo = 0.5;
         }
 
+        this.params.tipo_corpo = selecao;
+
         this.updateMorphs();
         this.updateCircunferencias();
     }
 
     setAltura(selecao) {
         this.escalarTamanho(1 + (selecao * 0.060));
+        this.params.altura = selecao;
         this.updateCircunferencias();
     }
 
@@ -738,7 +979,7 @@ class Roupa {
 
                     this.#scene.add(objeto);
 
-                    console.log("Modelo carregado:", objeto);
+                    //console.log("Modelo carregado:", objeto);
                     resolve(objeto);
                 },
                 undefined,
@@ -763,7 +1004,7 @@ class Roupa {
 
             this.#malha.updateMorphTargets();
 
-            console.log("Morphs:", this.#morphs);
+            //console.log("Morphs:", this.#morphs);
 
             if (this.#tipo == "cima") {
                 this.#malha.morphTargetInfluences[
@@ -787,7 +1028,7 @@ class Roupa {
                         [2, 2, 2, 1]
                     )
                 ] = 1;
-                console.log("Morph:", this.#getIndiceMorph4D(this.#morphs.altura, this.#morphs.tipo_corpo, this.#morphs.cintura, this.#morphs.tamanho, [2, 2, 2, 1]));
+                //console.log("Morph:", this.#getIndiceMorph4D(this.#morphs.altura, this.#morphs.tipo_corpo, this.#morphs.cintura, this.#morphs.tamanho, [2, 2, 2, 1]));
             }
 
             this.aplicarAlteracoes();
@@ -857,7 +1098,7 @@ class Roupa {
         // Finalmente, adiciona o índice para a quinta dimensão variável (m)
         index1D += m;
 
-        console.log("Índice 1D:", index1D);
+        //console.log("Índice 1D:", index1D);
 
         return index1D;
     }
@@ -899,7 +1140,7 @@ class Roupa {
     getTamanhosValidos() {
         const tamanhos = ["P", "M", "G", "GG"];
         const idx = this.#morphs.cintura;
-        console.log("Tamanhos válidos:", tamanhos.slice(idx, idx + 2));
+        //console.log("Tamanhos válidos:", tamanhos.slice(idx, idx + 2));
         return tamanhos.slice(idx, idx + 2);
     }
 
@@ -922,7 +1163,7 @@ class Roupa {
 
             this.#malha.updateMorphTargets();
 
-            console.log("Morphs:", this.#morphs);
+            //console.log("Morphs:", this.#morphs);
 
             if (this.#tipo == "cima") {
                 this.#malha.morphTargetInfluences[
@@ -946,7 +1187,7 @@ class Roupa {
                         [2, 2, 2, 1]
                     )
                 ] = 1;
-                console.log("Morph:", this.#getIndiceMorph4D(this.#morphs.altura, this.#morphs.tipo_corpo, this.#morphs.cintura, this.#morphs.tamanho, [2, 2, 2, 1]));
+                //console.log("Morph:", this.#getIndiceMorph4D(this.#morphs.altura, this.#morphs.tipo_corpo, this.#morphs.cintura, this.#morphs.tamanho, [2, 2, 2, 1]));
             }
 
             this.aplicarAlteracoes();
